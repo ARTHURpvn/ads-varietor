@@ -26,15 +26,15 @@ from pathlib import Path
 
 import pytest
 
-from video_variations.core import ffmpeg as ffmpeg_module
-from video_variations.core.batch import render_batch, summarize
-from video_variations.core.models import (
+from ads_varietor.core import ffmpeg as ffmpeg_module
+from ads_varietor.core.batch import render_batch, summarize
+from ads_varietor.core.models import (
     VariationParams,
     VariationResult,
     VariationStatus,
     VideoInfo,
 )
-from video_variations.core.probe import find_binary
+from ads_varietor.core.probe import find_binary
 
 # --------------------------------------------------------------------------
 # Helpers e fixtures

@@ -1,4 +1,4 @@
-"""Testes de src/video_variations/api/storage.py.
+"""Testes de src/ads_varietor/api/storage.py.
 
 Foco em segurança: contenção de caminho, allowlist de extensão, limite de
 upload e montagem de ZIP só com os arquivos pedidos.
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from video_variations.api.storage import (
+from ads_varietor.api.storage import (
     ALLOWED_EXTENSIONS,
     CHUNK_SIZE,
     DEFAULT_EXTENSION,

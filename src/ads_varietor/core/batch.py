@@ -6,15 +6,15 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from video_variations.core.ffmpeg import render_variation
-from video_variations.core.models import (
+from ads_varietor.core.ffmpeg import render_variation
+from ads_varietor.core.models import (
     ProcessingMode,
     VariationParams,
     VariationResult,
     VariationStatus,
     VideoInfo,
 )
-from video_variations.core.probe import probe_video
+from ads_varietor.core.probe import probe_video
 
 ProgressCallback = Callable[[VariationResult], Awaitable[None]]
 

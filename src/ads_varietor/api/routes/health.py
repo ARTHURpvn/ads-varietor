@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from video_variations.api.schemas import HealthResponse
-from video_variations.core.probe import FFmpegNotFoundError, find_binary
+from ads_varietor.api.schemas import HealthResponse
+from ads_varietor.core.probe import FFmpegNotFoundError, find_binary
 
 router = APIRouter(tags=["health"])
 

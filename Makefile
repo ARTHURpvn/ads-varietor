@@ -6,7 +6,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python
 
 help:
-	@echo "Video Variations System"
+	@echo "ADS Varietor"
 	@echo ""
 	@echo "  make setup      — cria o venv, instala o pacote e o frontend"
 	@echo "  make api        — sobe a API em http://127.0.0.1:8000"
@@ -35,7 +35,7 @@ setup:
 	@echo "Pronto. Rode 'make api' e 'make frontend'."
 
 api:
-	@$(PYTHON) -m uvicorn video_variations.api.main:app --host 127.0.0.1 --port 8000
+	@$(PYTHON) -m uvicorn ads_varietor.api.main:app --host 127.0.0.1 --port 8000
 
 frontend:
 	@cd frontend && npm run dev
@@ -45,7 +45,7 @@ test:
 
 run:
 	@test -n "$(VIDEO)" || (echo "Informe o vídeo: make run VIDEO=video.mp4" && exit 1)
-	@$(VENV)/bin/video-variations "$(VIDEO)" -n $(or $(N),5) -w $(or $(W),4) -o $(or $(OUT),./output)
+	@$(VENV)/bin/ads-varietor "$(VIDEO)" -n $(or $(N),5) -w $(or $(W),4) -o $(or $(OUT),./output)
 
 clean:
 	@rm -rf output frontend/dist .pytest_cache

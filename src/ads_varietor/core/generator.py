@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import random
 
-from video_variations.core.metadata import MetadataGenerator
-from video_variations.core.models import FilterType, VariationParams
+from ads_varietor.core.metadata import MetadataGenerator
+from ads_varietor.core.models import FilterType, VariationParams
 
 FILTER_CHOICES = tuple(FilterType)
 NOISE_PROBABILITY = 0.5

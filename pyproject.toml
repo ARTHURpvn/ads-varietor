@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "video-variations"
+name = "ads-varietor"
 version = "1.0.0"
 description = "Gera múltiplas variações de um vídeo com parâmetros que variam automaticamente"
 readme = "README.md"
@@ -26,10 +26,10 @@ dev = [
 ]
 
 [project.scripts]
-video-variations = "video_variations.cli.main:main"
+ads-varietor = "ads_varietor.cli.main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/video_variations"]
+packages = ["src/ads_varietor"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

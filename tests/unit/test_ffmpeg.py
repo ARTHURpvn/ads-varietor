@@ -9,18 +9,18 @@ from pathlib import Path
 
 import pytest
 
-from video_variations.core.ffmpeg import (
+from ads_varietor.core.ffmpeg import (
     build_command,
     build_filter_complex,
     render_variation,
 )
-from video_variations.core.models import (
+from ads_varietor.core.models import (
     FilterType,
     VariationParams,
     VariationStatus,
     VideoInfo,
 )
-from video_variations.core.probe import find_binary
+from ads_varietor.core.probe import find_binary
 
 # --------------------------------------------------------------------------
 # Helpers e fixtures

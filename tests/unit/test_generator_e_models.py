@@ -7,8 +7,8 @@ import random
 import pytest
 from pydantic import ValidationError
 
-from video_variations.core.generator import VariationGenerator
-from video_variations.core.models import (
+from ads_varietor.core.generator import VariationGenerator
+from ads_varietor.core.models import (
     VARIATION_ID_PATTERN,
     FilterType,
     VariationParams,

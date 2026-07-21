@@ -16,10 +16,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from video_variations.api import storage
-from video_variations.api.observability import log_event
-from video_variations.api.repository import JobRepository
-from video_variations.settings import Settings
+from ads_varietor.api import storage
+from ads_varietor.api.observability import log_event
+from ads_varietor.api.repository import JobRepository
+from ads_varietor.settings import Settings
 
 logger = logging.getLogger(__name__)
 

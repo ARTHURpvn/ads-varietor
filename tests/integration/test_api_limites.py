@@ -25,9 +25,9 @@ from typing import Any
 import httpx
 import pytest
 
-from video_variations.api.main import create_app
-from video_variations.core.generator import VariationGenerator
-from video_variations.settings import get_settings
+from ads_varietor.api.main import create_app
+from ads_varietor.core.generator import VariationGenerator
+from ads_varietor.settings import get_settings
 
 POLL_INTERVAL_SECONDS = 0.25
 POLL_TIMEOUT_SECONDS = 60.0

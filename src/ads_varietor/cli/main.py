@@ -8,10 +8,10 @@ import json
 import sys
 from pathlib import Path
 
-from video_variations.core.batch import render_batch, summarize
-from video_variations.core.generator import VariationGenerator
-from video_variations.core.models import VariationParams
-from video_variations.core.probe import FFmpegNotFoundError, InvalidVideoError
+from ads_varietor.core.batch import render_batch, summarize
+from ads_varietor.core.generator import VariationGenerator
+from ads_varietor.core.models import VariationParams
+from ads_varietor.core.probe import FFmpegNotFoundError, InvalidVideoError
 
 
 def _load_variations_from_config(config_path: Path) -> list[VariationParams]:

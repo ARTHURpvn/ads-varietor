@@ -9,9 +9,9 @@ from typing import Annotated
 from fastapi import Depends, Request
 from fastapi.security import APIKeyHeader
 
-from video_variations.api import errors
-from video_variations.api.repository import JobRepository
-from video_variations.settings import Settings, get_settings
+from ads_varietor.api import errors
+from ads_varietor.api.repository import JobRepository
+from ads_varietor.settings import Settings, get_settings
 
 API_KEY_HEADER_NAME = "X-API-Key"
 JOBS_WINDOW_SECONDS = 3600

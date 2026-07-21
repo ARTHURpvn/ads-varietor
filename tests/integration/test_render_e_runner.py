@@ -20,15 +20,15 @@ from typing import Any
 
 import pytest
 
-from video_variations.api.repository import JobRepository, JobStatus
-from video_variations.api.runner import JobRunner
-from video_variations.core.batch import render_batch
-from video_variations.core.models import (
+from ads_varietor.api.repository import JobRepository, JobStatus
+from ads_varietor.api.runner import JobRunner
+from ads_varietor.core.batch import render_batch
+from ads_varietor.core.models import (
     VariationParams,
     VariationStatus,
 )
-from video_variations.core.probe import find_binary
-from video_variations.settings import Settings
+from ads_varietor.core.probe import find_binary
+from ads_varietor.settings import Settings
 
 DURACAO_BASE_SEGUNDOS = 6
 DURACAO_OVERLAY_SEGUNDOS = 2

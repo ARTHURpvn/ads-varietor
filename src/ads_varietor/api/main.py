@@ -12,20 +12,20 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from video_variations.api import maintenance
-from video_variations.api.errors import (
+from ads_varietor.api import maintenance
+from ads_varietor.api.errors import (
     ProblemError,
     http_error_handler,
     problem_error_handler,
     unhandled_error_handler,
     validation_error_handler,
 )
-from video_variations.api.observability import configure_logging
-from video_variations.api.repository import JobRepository
-from video_variations.api.routes import health, jobs, usage
-from video_variations.api.runner import JobRunner
-from video_variations.core.probe import find_binary
-from video_variations.settings import get_settings
+from ads_varietor.api.observability import configure_logging
+from ads_varietor.api.repository import JobRepository
+from ads_varietor.api.routes import health, jobs, usage
+from ads_varietor.api.runner import JobRunner
+from ads_varietor.core.probe import find_binary
+from ads_varietor.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +137,7 @@ def run() -> None:  # pragma: no cover - entrada de execução
     import uvicorn
 
     uvicorn.run(
-        "video_variations.api.main:app",
+        "ads_varietor.api.main:app",
         host="127.0.0.1",
         port=8000,
         workers=1,

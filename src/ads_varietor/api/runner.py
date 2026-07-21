@@ -11,17 +11,17 @@ import logging
 import time
 from pathlib import Path
 
-from video_variations.api.observability import log_event
-from video_variations.core.batch import render_batch
-from video_variations.core.models import (
+from ads_varietor.api.observability import log_event
+from ads_varietor.core.batch import render_batch
+from ads_varietor.core.models import (
     ProcessingMode,
     VariationParams,
     VariationResult,
     VariationStatus,
 )
-from video_variations.core.probe import probe_video
-from video_variations.api.repository import JobRepository, JobStatus
-from video_variations.settings import Settings
+from ads_varietor.core.probe import probe_video
+from ads_varietor.api.repository import JobRepository, JobStatus
+from ads_varietor.settings import Settings
 
 logger = logging.getLogger(__name__)
 

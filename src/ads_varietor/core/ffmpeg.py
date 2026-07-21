@@ -12,7 +12,7 @@ import asyncio
 import hashlib
 from pathlib import Path
 
-from video_variations.core.models import (
+from ads_varietor.core.models import (
     FilterType,
     ProcessingMode,
     VariationParams,
@@ -20,7 +20,7 @@ from video_variations.core.models import (
     VariationStatus,
     VideoInfo,
 )
-from video_variations.core.probe import find_binary
+from ads_varietor.core.probe import find_binary
 
 # Margem somada à duração do ruído para cobrir arredondamento de timestamps.
 NOISE_DURATION_MARGIN_SECONDS = 2.0

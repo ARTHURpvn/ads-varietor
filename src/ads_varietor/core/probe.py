@@ -7,7 +7,7 @@ import json
 import shutil
 from pathlib import Path
 
-from video_variations.core.models import VideoInfo
+from ads_varietor.core.models import VideoInfo
 
 FALLBACK_DIRECTORIES = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")
 PROBE_TIMEOUT_SECONDS = 30

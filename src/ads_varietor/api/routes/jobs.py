@@ -12,26 +12,26 @@ from fastapi import APIRouter, File, Form, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from video_variations.api import errors, maintenance, storage
-from video_variations.api.observability import log_event, owner_id
-from video_variations.api.deps import (
+from ads_varietor.api import errors, maintenance, storage
+from ads_varietor.api.observability import log_event, owner_id
+from ads_varietor.api.deps import (
     AppSettings,
     JobCreationKey,
     RateLimitedKey,
     Repository,
 )
-from video_variations.api.repository import JobStatus
-from video_variations.api.runner import JobRunner
-from video_variations.api.schemas import (
+from ads_varietor.api.repository import JobStatus
+from ads_varietor.api.runner import JobRunner
+from ads_varietor.api.schemas import (
     JobCreatedResponse,
     JobDetailResponse,
     JobProgress,
     VariationView,
 )
-from video_variations.core.ffmpeg import compute_md5
-from video_variations.core.generator import VariationGenerator
-from video_variations.core.models import ProcessingMode
-from video_variations.core.probe import InvalidVideoError, probe_video
+from ads_varietor.core.ffmpeg import compute_md5
+from ads_varietor.core.generator import VariationGenerator
+from ads_varietor.core.models import ProcessingMode
+from ads_varietor.core.probe import InvalidVideoError, probe_video
 
 logger = logging.getLogger(__name__)
 

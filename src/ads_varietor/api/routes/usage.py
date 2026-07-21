@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Response
 
-from video_variations.api import storage
-from video_variations.api.deps import AppSettings, RateLimitedKey, Repository
-from video_variations.api.schemas import KeyUsage, UsageResponse
+from ads_varietor.api import storage
+from ads_varietor.api.deps import AppSettings, RateLimitedKey, Repository
+from ads_varietor.api.schemas import KeyUsage, UsageResponse
 
 router = APIRouter(tags=["usage"])
 

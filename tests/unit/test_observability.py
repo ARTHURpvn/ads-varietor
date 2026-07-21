@@ -1,4 +1,4 @@
-"""Testes de src/video_variations/api/observability.py.
+"""Testes de src/ads_varietor/api/observability.py.
 
 O ponto crítico não é o formato: é a garantia de que a API key em texto
 puro e o nome do arquivo enviado nunca chegam ao log.
@@ -12,7 +12,7 @@ import logging
 
 import pytest
 
-from video_variations.api.observability import (
+from ads_varietor.api.observability import (
     OWNER_PREFIX_LENGTH,
     JsonLogFormatter,
     configure_logging,

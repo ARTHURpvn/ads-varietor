@@ -18,8 +18,8 @@ from unittest import mock
 import httpx
 import pytest
 
-from video_variations.api.main import create_app
-from video_variations.settings import get_settings
+from ads_varietor.api.main import create_app
+from ads_varietor.settings import get_settings
 
 CHAVE_A = "chave-de-teste-alpha-com-tamanho-suficiente-01"
 CHAVE_B = "chave-de-teste-bravo-com-tamanho-suficiente-02"

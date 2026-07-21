@@ -60,7 +60,7 @@ ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Um worker só: o semáforo global de FFmpeg vive na memória do processo, e
 # com dois workers cada um abriria o próprio limite.
-CMD ["uvicorn", "video_variations.api.main:app", \
+CMD ["uvicorn", "ads_varietor.api.main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
      "--workers", "1", \

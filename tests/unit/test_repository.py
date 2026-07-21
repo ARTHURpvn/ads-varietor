@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from video_variations.api.repository import (
+from ads_varietor.api.repository import (
     SCHEMA_VERSION,
     JobRepository,
     JobStatus,

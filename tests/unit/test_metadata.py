@@ -7,19 +7,19 @@ from pathlib import Path
 
 import pytest
 
-from video_variations.core.ffmpeg import (
+from ads_varietor.core.ffmpeg import (
     build_metadata_only_command,
     compute_md5,
     render_variation,
 )
-from video_variations.core.generator import VariationGenerator
-from video_variations.core.metadata import MetadataGenerator
-from video_variations.core.models import (
+from ads_varietor.core.generator import VariationGenerator
+from ads_varietor.core.metadata import MetadataGenerator
+from ads_varietor.core.models import (
     ProcessingMode,
     VariationParams,
     VariationStatus,
 )
-from video_variations.core.probe import find_binary, probe_video
+from ads_varietor.core.probe import find_binary, probe_video
 
 # Tags que o contêiner MP4 descarta silenciosamente. Pedi-las daria a falsa
 # impressão de que estão sendo gravadas no arquivo.
@@ -269,7 +269,7 @@ def test_variacao_antiga_ainda_e_lida_quando_json_nao_tem_tint_opacity() -> None
     Jobs gravados antes de `bg_opacity`/`video_opacity` virarem
     `tint_opacity` não têm o campo novo no JSON salvo no banco.
     """
-    from video_variations.api.schemas import VariationView
+    from ads_varietor.api.schemas import VariationView
 
     antigo = {
         "variation_id": "var_0000",
@@ -306,8 +306,8 @@ def test_mixagem_nao_normaliza_para_o_audio_original_nao_perder_volume() -> None
     O `amix` divide tudo pelo número de entradas quando normaliza, então o
     áudio caía para metade do volume só por existir uma faixa de ruído.
     """
-    from video_variations.core.ffmpeg import build_filter_complex
-    from video_variations.core.models import VideoInfo
+    from ads_varietor.core.ffmpeg import build_filter_complex
+    from ads_varietor.core.models import VideoInfo
 
     graph, _ = build_filter_complex(
         VariationParams(
@@ -323,8 +323,8 @@ def test_mixagem_nao_normaliza_para_o_audio_original_nao_perder_volume() -> None
 
 
 def test_ruido_entra_com_peso_menor_que_o_audio_original() -> None:
-    from video_variations.core.ffmpeg import NOISE_MIX_WEIGHT, build_filter_complex
-    from video_variations.core.models import VideoInfo
+    from ads_varietor.core.ffmpeg import NOISE_MIX_WEIGHT, build_filter_complex
+    from ads_varietor.core.models import VideoInfo
 
     graph, _ = build_filter_complex(
         VariationParams(

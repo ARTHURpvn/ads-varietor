@@ -15,12 +15,12 @@ from typing import Any
 
 import pytest
 
-from video_variations.api import maintenance
-from video_variations.api.repository import JobRepository, JobStatus
-from video_variations.api.runner import JobRunner
-from video_variations.core.models import VariationParams
-from video_variations.core.probe import find_binary
-from video_variations.settings import Settings
+from ads_varietor.api import maintenance
+from ads_varietor.api.repository import JobRepository, JobStatus
+from ads_varietor.api.runner import JobRunner
+from ads_varietor.core.models import VariationParams
+from ads_varietor.core.probe import find_binary
+from ads_varietor.settings import Settings
 
 TIMEOUT_POLL_SEGUNDOS = 60.0
 INTERVALO_POLL_SEGUNDOS = 0.02

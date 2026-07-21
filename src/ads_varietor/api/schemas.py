@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from video_variations.api.repository import JobStatus
-from video_variations.core.models import ProcessingMode
+from ads_varietor.api.repository import JobStatus
+from ads_varietor.core.models import ProcessingMode
 
 
 class VariationParamsView(BaseModel):
