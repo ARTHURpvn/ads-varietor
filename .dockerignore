@@ -1,0 +1,20 @@
+# Nada aqui é necessário para construir a imagem da API, e várias destas
+# entradas são segredo (.env) ou lixo pesado (storage, node_modules).
+.git
+.gitignore
+.venv
+.env
+.pytest_cache
+__pycache__
+**/__pycache__
+*.pyc
+storage/
+output/
+tests/
+docs/
+frontend/node_modules
+frontend/dist
+Makefile
+Dockerfile
+docker-compose.yml
+Caddyfile

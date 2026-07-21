@@ -1,0 +1,101 @@
+# Topologia de produção: Caddy na borda, API só na rede interna.
+#
+# O Caddy termina TLS, serve o build estático do frontend e injeta o header
+# X-API-Key nas chamadas /api/*. Esse é o modelo de segurança do projeto: o
+# browser nunca vê a chave, então não adianta abrir o DevTools para roubá-la.
+#
+# Antes de subir, preencha o .env da raiz com:
+#   DOMINIO=variacoes.seudominio.com
+#   EMAIL_ACME=voce@seudominio.com
+#   API_KEYS=<chave gerada com secrets.token_urlsafe(32)>
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Sem `ports`: a API não é publicada no host. O único caminho até ela é
+    # pela rede interna, vindo do Caddy.
+    expose:
+      - "8000"
+    environment:
+      STORAGE_DIR: /data
+      API_KEYS: ${API_KEYS:?defina API_KEYS no .env}
+      # O frontend é servido pelo mesmo domínio, então CORS fica vazio.
+      CORS_ORIGINS: ""
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-209715200}
+      MAX_STORAGE_BYTES: ${MAX_STORAGE_BYTES:-21474836480}
+      MAX_STORAGE_BYTES_PER_KEY: ${MAX_STORAGE_BYTES_PER_KEY:-10737418240}
+      MAX_ZIP_BYTES: ${MAX_ZIP_BYTES:-4294967296}
+      RETENTION_HOURS: ${RETENTION_HOURS:-6}
+      CLEANUP_INTERVAL_SECONDS: ${CLEANUP_INTERVAL_SECONDS:-900}
+      DELETE_AFTER_BATCH_DOWNLOAD: ${DELETE_AFTER_BATCH_DOWNLOAD:-false}
+      RECONCILE_ENABLED: ${RECONCILE_ENABLED:-true}
+      STORAGE_WARN_PERCENT: ${STORAGE_WARN_PERCENT:-80}
+      MAX_CONCURRENT_FFMPEG: ${MAX_CONCURRENT_FFMPEG:-4}
+      MAX_VARIATIONS_PER_JOB: ${MAX_VARIATIONS_PER_JOB:-50}
+      FFMPEG_TIMEOUT_SECONDS: ${FFMPEG_TIMEOUT_SECONDS:-300}
+      RATE_LIMIT_JOBS_PER_HOUR: ${RATE_LIMIT_JOBS_PER_HOUR:-20}
+      RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-120}
+      LOG_JSON: "true"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - storage:/data
+    networks:
+      - interna
+    # FFmpeg é o consumidor de CPU e memória do sistema. Sem teto, um job
+    # grande compete com o Caddy e derruba o atendimento das outras rotas.
+    deploy:
+      resources:
+        limits:
+          cpus: "${API_CPUS:-4.0}"
+          memory: ${API_MEMORY:-4g}
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMINIO: ${DOMINIO:?defina DOMINIO no .env}
+      EMAIL_ACME: ${EMAIL_ACME:?defina EMAIL_ACME no .env}
+      # A chave existe só dentro do container do Caddy; ela é injetada nas
+      # requisições que vão para a API e nunca chega ao browser.
+      # Precisa ser UMA chave só, e uma das que estão em API_KEYS. Usar
+      # API_KEYS aqui injetaria a lista inteira ("chave1,chave2") num header
+      # que espera um valor único, e toda requisição do frontend viraria 401.
+      API_KEY_INTERNA: ${API_KEY_FRONTEND:?defina API_KEY_FRONTEND no .env (uma das chaves de API_KEYS)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Build estático do frontend: gere com `npm run build` antes do deploy.
+      - ./frontend/dist:/srv/frontend:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    networks:
+      - interna
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+networks:
+  interna:
+    driver: bridge
+
+volumes:
+  # Volume nomeado: sobrevive a `docker compose down` e a troca de imagem.
+  # Backup e limpeza estão documentados no README, seção "Operação".
+  storage:
+  caddy_data:
+  caddy_config:

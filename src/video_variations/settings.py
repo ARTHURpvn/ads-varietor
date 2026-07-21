@@ -47,20 +47,70 @@ class Settings(BaseSettings):
         gt=0,
         description="Quota total de disco para o serviço.",
     )
+    max_storage_bytes_per_key: int = Field(
+        default=10 * 1024 * 1024 * 1024,
+        gt=0,
+        description=(
+            "Quota de disco por chave de API. Impede que uma única chave "
+            "consuma a quota global e trave as demais."
+        ),
+    )
     max_zip_bytes: int = Field(
         default=4 * 1024 * 1024 * 1024,
         gt=0,
         description="Tamanho máximo do ZIP gerado no download em lote.",
     )
     retention_hours: int = Field(
-        default=24,
+        default=6,
         gt=0,
-        description="Horas até um job concluído ser apagado.",
+        description=(
+            "Horas até um job terminado ser apagado. O padrão é curto de "
+            "propósito: um job de 50 variações ocupa vários GB e o fluxo "
+            "real é criar e baixar em minutos."
+        ),
     )
     cleanup_interval_seconds: int = Field(
         default=900,
         gt=0,
         description="Intervalo entre execuções da rotina de limpeza.",
+    )
+    delete_after_batch_download: bool = Field(
+        default=False,
+        description=(
+            "Apaga os arquivos do job assim que o download em lote termina. "
+            "Libera disco na hora, mas impede rebaixar o mesmo job."
+        ),
+    )
+    reconcile_enabled: bool = Field(
+        default=True,
+        description=(
+            "Reconcilia disco e banco no start e a cada ciclo de limpeza."
+        ),
+    )
+    unreferenced_upload_grace_seconds: int = Field(
+        default=3600,
+        gt=0,
+        description=(
+            "Idade mínima de um upload sem job associado para ser apagado "
+            "pela reconciliação. A folga evita corrida com um upload que "
+            "acabou de ser gravado e ainda não virou registro no banco."
+        ),
+    )
+
+    # --- Observabilidade -------------------------------------------------
+    storage_warn_percent: int = Field(
+        default=80,
+        ge=1,
+        le=100,
+        description="Percentual da quota global que dispara aviso no log.",
+    )
+    log_json: bool = Field(
+        default=True,
+        description="Emite os logs em JSON de uma linha por evento.",
+    )
+    log_level: str = Field(
+        default="INFO",
+        description="Nível mínimo de log (DEBUG, INFO, WARNING, ERROR).",
     )
 
     # --- Processamento ---------------------------------------------------

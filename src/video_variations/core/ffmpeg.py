@@ -9,10 +9,12 @@ serve aqui.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from pathlib import Path
 
 from video_variations.core.models import (
     FilterType,
+    ProcessingMode,
     VariationParams,
     VariationResult,
     VariationStatus,
@@ -23,6 +25,10 @@ from video_variations.core.probe import find_binary
 # Margem somada à duração do ruído para cobrir arredondamento de timestamps.
 NOISE_DURATION_MARGIN_SECONDS = 2.0
 MINIMUM_NOISE_DURATION_SECONDS = 1.0
+# Peso do ruído na mixagem. Junto com a amplitude sorteada, deixa o ruído
+# por volta de -75 dB, contra -21 dB de um áudio comum: altera a faixa de
+# áudio sem que se ouça chiado.
+NOISE_MIX_WEIGHT = 0.15
 
 
 class FilterGraphError(ValueError):
@@ -35,18 +41,6 @@ def _to_even(value: int) -> int:
     libx264 com pixel format yuv420p exige largura e altura pares.
     """
     return max(2, value - (value % 2))
-
-
-def _apply_opacity_to_color(hex_color: str, opacity: float) -> str:
-    """Escurece a cor de fundo proporcionalmente à opacidade pedida.
-
-    Não existe nada atrás do fundo, então uma opacidade real não teria efeito
-    visível. Misturar a cor com preto preserva a intenção — fundo mais fraco —
-    sem um passe de composição extra.
-    """
-    channels = (hex_color[0:2], hex_color[2:4], hex_color[4:6])
-    mixed = (int(int(channel, 16) * opacity) for channel in channels)
-    return "".join(f"{value:02x}" for value in mixed)
 
 
 def _build_color_filter(params: VariationParams) -> str | None:
@@ -82,12 +76,11 @@ def build_filter_complex(
     """
     canvas_width = _to_even(info.width)
     canvas_height = _to_even(info.height)
+    # A escala é sempre acima de 1: o vídeo cresce e o excedente é cortado
+    # nas bordas. Assim a saída mantém a resolução do original sem faixas de
+    # fundo aparecendo — o enquadramento muda, o formato não.
     scaled_width = _to_even(int(canvas_width * params.video_scale))
     scaled_height = _to_even(int(canvas_height * params.video_scale))
-    offset_x = (canvas_width - scaled_width) // 2
-    offset_y = (canvas_height - scaled_height) // 2
-
-    background = _apply_opacity_to_color(params.background_color, params.bg_opacity)
 
     # --- Cadeia de vídeo -------------------------------------------------
     video_steps: list[str] = []
@@ -95,15 +88,30 @@ def build_filter_complex(
     if color_filter:
         video_steps.append(color_filter)
     video_steps.append(f"scale={scaled_width}:{scaled_height}")
-    video_steps.append("format=yuva420p")
-    video_steps.append(f"colorchannelmixer=aa={params.video_opacity:.4f}")
+    video_steps.append(
+        f"crop={canvas_width}:{canvas_height}:"
+        f"{(scaled_width - canvas_width) // 2}:"
+        f"{(scaled_height - canvas_height) // 2}"
+    )
     video_steps.append(f"setpts=PTS/{params.speed:.6f}")
 
-    chains = [
-        f"color=c=0x{background}:s={canvas_width}x{canvas_height}[bg]",
-        f"[0:v]{','.join(video_steps)}[fg]",
-        f"[bg][fg]overlay={offset_x}:{offset_y}:shortest=1[composed]",
-    ]
+    chains = [f"[0:v]{','.join(video_steps)}[base]"]
+
+    # Camada de cor por cima, com alpha baixo. Antes o vídeo é que ficava
+    # transparente sobre um fundo colorido, o que lavava a imagem inteira;
+    # um véu sutil altera os pixels sem estragar o resultado.
+    if params.tint_opacity > 0:
+        chains.append(
+            f"color=c=0x{params.background_color}:"
+            f"s={canvas_width}x{canvas_height}[tint_src]"
+        )
+        chains.append(
+            f"[tint_src]format=yuva420p,"
+            f"colorchannelmixer=aa={params.tint_opacity:.4f}[tint]"
+        )
+        chains.append("[base][tint]overlay=0:0:shortest=1[composed]")
+    else:
+        chains.append("[base]null[composed]")
 
     last_video_label = "composed"
     if has_overlay_input and params.overlay_enabled:
@@ -147,15 +155,81 @@ def build_filter_complex(
         audio_sources.append("a_noise")
 
     if len(audio_sources) == 2:
+        # `normalize=0` é essencial: com a normalização padrão o amix divide
+        # tudo pelo número de entradas e o áudio original perde 6 dB — metade
+        # do volume — só por existir uma faixa de ruído junto.
+        # O peso mantém o ruído dezenas de dB abaixo do som original, presente
+        # no sinal mas fora do que se escuta.
         chains.append(
-            "[a_original][a_noise]amix=inputs=2:duration=first:"
-            "dropout_transition=0[aout]"
+            f"[a_original][a_noise]amix=inputs=2:duration=first:"
+            f"dropout_transition=0:weights=1 {NOISE_MIX_WEIGHT}:"
+            f"normalize=0[aout]"
         )
         maps.append("[aout]")
     elif len(audio_sources) == 1:
         maps.append(f"[{audio_sources[0]}]")
 
     return ";".join(chains), maps
+
+
+def _metadata_arguments(params: VariationParams) -> list[str]:
+    """Monta os pares `-metadata chave=valor` da variação.
+
+    Cada valor entra como um único argumento da lista; nada é interpolado
+    numa string de comando, então um valor com `;` ou `$()` é apenas texto.
+    """
+    metadados: dict[str, str] = {}
+    if params.metadata_title:
+        metadados["title"] = params.metadata_title
+    if params.metadata_author:
+        metadados["artist"] = params.metadata_author
+    metadados.update(params.metadata_extra)
+
+    argumentos: list[str] = []
+    for chave, valor in metadados.items():
+        argumentos.extend(["-metadata", f"{chave}={valor}"])
+    return argumentos
+
+
+def build_metadata_only_command(
+    *,
+    ffmpeg_path: str,
+    input_video: Path,
+    output_path: Path,
+    params: VariationParams,
+) -> list[str]:
+    """Comando que só reescreve os metadados, sem reencodar.
+
+    `-c copy` copia os streams bit a bit: a imagem e o som saem idênticos ao
+    original e o arquivo fica pronto em frações de segundo. O que muda é o
+    contêiner e os metadados — o suficiente para o arquivo ter outro hash.
+    """
+    command = [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-i",
+        str(input_video),
+        "-map",
+        "0",
+        "-c",
+        "copy",
+        # Descarta os metadados do arquivo de origem antes de gravar os
+        # novos; sem isto os campos antigos sobreviveriam ao lado.
+        "-map_metadata",
+        "-1",
+        # Sem isto o muxer grava `encoder=LavfXX.YY`, uma assinatura idêntica
+        # em todo arquivo gerado e que denuncia a ferramenta usada.
+        "-fflags",
+        "+bitexact",
+    ]
+    command.extend(_metadata_arguments(params))
+    command.extend(["-movflags", "+faststart"])
+    command.append(str(output_path))
+    return command
 
 
 def build_command(
@@ -194,11 +268,9 @@ def build_command(
     for label in maps:
         command.extend(["-map", label])
 
-    if params.metadata_title:
-        command.extend(["-metadata", f"title={params.metadata_title}"])
-    if params.metadata_author:
-        command.extend(["-metadata", f"artist={params.metadata_author}"])
+    command.extend(_metadata_arguments(params))
 
+    command.extend(["-fflags", "+bitexact"])
     command.extend(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"])
     if len(maps) > 1:
         command.extend(["-c:a", "aac", "-b:a", "128k"])
@@ -217,6 +289,7 @@ async def render_variation(
     info: VideoInfo,
     overlay_video: Path | None = None,
     timeout_seconds: int = 300,
+    mode: ProcessingMode = ProcessingMode.FULL,
 ) -> VariationResult:
     """Renderiza uma variação e devolve o resultado.
 
@@ -225,14 +298,24 @@ async def render_variation(
     derrube o batch inteiro.
     """
     output_path = output_dir / f"{params.variation_id}.mp4"
-    command = build_command(
-        ffmpeg_path=find_binary("ffmpeg"),
-        input_video=input_video,
-        output_path=output_path,
-        params=params,
-        info=info,
-        overlay_video=overlay_video,
-    )
+    ffmpeg_path = find_binary("ffmpeg")
+
+    if mode is ProcessingMode.METADATA_ONLY:
+        command = build_metadata_only_command(
+            ffmpeg_path=ffmpeg_path,
+            input_video=input_video,
+            output_path=output_path,
+            params=params,
+        )
+    else:
+        command = build_command(
+            ffmpeg_path=ffmpeg_path,
+            input_video=input_video,
+            output_path=output_path,
+            params=params,
+            info=info,
+            overlay_video=overlay_video,
+        )
 
     loop = asyncio.get_running_loop()
     started_at = loop.time()
@@ -285,4 +368,18 @@ async def render_variation(
         output_path=str(output_path),
         size_bytes=output_path.stat().st_size,
         duration_seconds=elapsed,
+        md5=await asyncio.to_thread(compute_md5, output_path),
     )
+
+
+def compute_md5(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
+    """Calcula o MD5 do arquivo lendo em blocos.
+
+    Em blocos porque um vídeo pode ter centenas de MB e carregá-lo inteiro
+    na memória só para somar o hash não se justifica.
+    """
+    digest = hashlib.md5()
+    with path.open("rb") as arquivo:
+        while bloco := arquivo.read(chunk_size):
+            digest.update(bloco)
+    return digest.hexdigest()

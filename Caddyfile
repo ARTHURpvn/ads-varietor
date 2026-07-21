@@ -1,0 +1,88 @@
+# Caddy na borda: termina TLS, serve o frontend estático e injeta a API key
+# nas chamadas para a API.
+#
+# O ponto central: o browser NUNCA recebe a X-API-Key. Ela existe só aqui
+# dentro, como variável de ambiente do container do Caddy, e é acrescentada
+# ao request já do lado do servidor.
+{
+	email {$EMAIL_ACME}
+
+	# Não anuncia a versão do servidor: número de versão é insumo de
+	# reconhecimento para quem procura exploit conhecido.
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+{$DOMINIO} {
+	encode zstd gzip
+
+	log {
+		output stdout
+		format json
+	}
+
+	header {
+		# HSTS só faz sentido porque o Caddy já obtém certificado sozinho.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# A API é same-origin; nada externo precisa ser carregado.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'"
+		-Server
+	}
+
+	# --- API --------------------------------------------------------------
+	handle /api/* {
+		request_body {
+			# Precisa acompanhar MAX_UPLOAD_BYTES da API (209715200 bytes).
+			# Em MB decimal o Caddy cortaria ~9,7 MB antes do limite da API,
+			# então o valor vai em MiB para casar exatamente com os dois.
+			# Se ficar MENOR, o Caddy corta o upload antes de a API poder
+			# responder o 413 explicativo; se ficar muito MAIOR, o disco do
+			# proxy vira o gargalo.
+			max_size 200MiB
+		}
+
+		reverse_proxy api:8000 {
+			# Um cliente não pode escolher o próprio nível de acesso.
+			#
+			# ATENÇÃO: o Caddy aplica as operações de header na ordem
+			# Add -> Set -> Delete, e NÃO na ordem em que estão escritas.
+			# Um `header_up -X-API-Key` aqui rodaria DEPOIS do set e
+			# apagaria justamente a chave que acabamos de injetar.
+			# `header_up Nome valor` é um SET: ele substitui o que o
+			# cliente tiver mandado, sem precisar de um delete antes.
+			header_up X-API-Key {$API_KEY_INTERNA}
+
+			header_up X-Real-IP {remote_host}
+
+			transport http {
+				# Upload de vídeo de 200 MB em link ruim leva minutos; o
+				# default de 30s cortaria o envio no meio.
+				dial_timeout 10s
+				read_timeout 900s
+				write_timeout 900s
+			}
+		}
+	}
+
+	# --- Frontend ---------------------------------------------------------
+	handle {
+		root * /srv/frontend
+
+		# Os assets do Vite têm hash no nome, então podem ser imutáveis.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+
+		# O index.html não pode ser cacheado: é ele que aponta para a versão
+		# atual dos assets depois de cada deploy.
+		@index path /
+		header @index Cache-Control "no-cache"
+
+		# SPA: qualquer rota desconhecida devolve o index.
+		try_files {path} /index.html
+		file_server
+	}
+}

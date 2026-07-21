@@ -16,6 +16,16 @@ Um sistema rápido e escalável para gerar múltiplas variações de vídeos com
 ✅ **Rápido** — FFmpeg com preset ultrafast para processamento rápido  
 ✅ **Cloud-Ready** — Preparado para AWS Lambda, Google Cloud Functions, ou Azure  
 
+## 🚢 Deploy e operação
+
+Para subir em produção (Docker + Caddy com TLS, quotas de disco, backup do
+volume e o endpoint `GET /api/v1/usage`), veja **[docs/OPERACAO.md](docs/OPERACAO.md)**.
+
+```bash
+cp .env.example .env    # preencha API_KEYS, DOMINIO e EMAIL_ACME
+make docker-up
+```
+
 ## 🚀 Instalação
 
 ### Pré-requisitos

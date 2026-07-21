@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from pathlib import Path
 from typing import Annotated, Any
@@ -11,7 +12,8 @@ from fastapi import APIRouter, File, Form, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from video_variations.api import errors, storage
+from video_variations.api import errors, maintenance, storage
+from video_variations.api.observability import log_event, owner_id
 from video_variations.api.deps import (
     AppSettings,
     JobCreationKey,
@@ -26,8 +28,12 @@ from video_variations.api.schemas import (
     JobProgress,
     VariationView,
 )
+from video_variations.core.ffmpeg import compute_md5
 from video_variations.core.generator import VariationGenerator
+from video_variations.core.models import ProcessingMode
 from video_variations.core.probe import InvalidVideoError, probe_video
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -56,6 +62,40 @@ async def _load_owned_job(
     return job
 
 
+async def _enforce_key_quota(
+    *,
+    repository: Repository,
+    settings: AppSettings,
+    api_key_hash: str,
+    input_path: Path,
+    input_bytes: int,
+    num_variations: int,
+) -> None:
+    """Rejeita o job se a chave já estourou a própria quota de disco.
+
+    A quota global sozinha não protege ninguém: uma chave que enche o disco
+    trava todas as outras. O erro distingue "serviço lotado" de "seu limite"
+    e não menciona consumo de terceiros.
+    """
+    usados = await repository.bytes_used_by_key(api_key_hash)
+    reserva = input_bytes * (1 + num_variations)
+
+    if usados + reserva <= settings.max_storage_bytes_per_key:
+        return
+
+    await storage.remove_path(input_path)
+    log_event(
+        logger,
+        "quota.key_exceeded",
+        level=logging.WARNING,
+        owner=owner_id(api_key_hash),
+        bytes_total=usados,
+        reserved_bytes=reserva,
+        quota_bytes=settings.max_storage_bytes_per_key,
+    )
+    raise errors.key_quota_exceeded(settings.max_storage_bytes_per_key)
+
+
 def _to_detail_response(job: dict[str, Any]) -> JobDetailResponse:
     variations = job["variations"]
     completed = sum(1 for item in variations if item["status"] == "completed")
@@ -65,6 +105,8 @@ def _to_detail_response(job: dict[str, Any]) -> JobDetailResponse:
         job_id=job["job_id"],
         status=JobStatus(job["status"]),
         num_variations=job["num_variations"],
+        mode=ProcessingMode(job["mode"]),
+        source_md5=job["source_md5"],
         created_at=job["created_at"],
         updated_at=job["updated_at"],
         error=job["error"],
@@ -88,6 +130,7 @@ async def create_job(
     settings: AppSettings,
     file: Annotated[UploadFile, File(description="Vídeo de entrada")],
     num_variations: Annotated[int, Form(ge=1)] = 5,
+    mode: Annotated[ProcessingMode, Form()] = ProcessingMode.FULL,
 ) -> JobCreatedResponse:
     if num_variations > settings.max_variations_per_job:
         raise errors.ProblemError(
@@ -107,11 +150,23 @@ async def create_job(
         raise errors.storage_full()
 
     try:
-        input_path, _ = await storage.save_upload(
+        input_path, input_bytes = await storage.save_upload(
             file, settings.uploads_dir, max_bytes=settings.max_upload_bytes
         )
     except storage.UploadTooLargeError:
         raise errors.upload_too_large(settings.max_upload_bytes) from None
+
+    # Com o arquivo em disco o tamanho real é conhecido, então a reserva por
+    # chave usa a entrada de verdade em vez do teto de upload. Antes disso
+    # só dava para estimar pelo pior caso, o que rejeitaria job legítimo.
+    await _enforce_key_quota(
+        repository=repository,
+        settings=settings,
+        api_key_hash=api_key_hash,
+        input_path=input_path,
+        input_bytes=input_bytes,
+        num_variations=num_variations,
+    )
 
     # Extensão e Content-Type não provam nada: só o ffprobe confirma que o
     # arquivo é mesmo um vídeo decodificável.
@@ -133,12 +188,18 @@ async def create_job(
     job_id = uuid.uuid4().hex
     output_dir = storage.resolve_within(settings.jobs_dir, job_id)
     variations = VariationGenerator().generate(num_variations)
+    # Guardado para o cliente poder comparar o hash de origem com o de cada
+    # saída e confirmar que nenhum arquivo repete o original.
+    source_md5 = await asyncio.to_thread(compute_md5, input_path)
 
     try:
         await repository.create_job(
             job_id=job_id,
             api_key_hash=api_key_hash,
             num_variations=num_variations,
+            mode=mode.value,
+            source_md5=source_md5,
+            input_bytes=input_bytes,
             input_path=input_path,
             output_dir=output_dir,
             variations=[
@@ -152,11 +213,24 @@ async def create_job(
         await storage.remove_path(input_path)
         raise
 
+    dono = owner_id(api_key_hash)
+    log_event(
+        logger,
+        "job.created",
+        job_id=job_id,
+        owner=dono,
+        bytes_total=input_bytes,
+        num_variations=num_variations,
+        mode=mode.value,
+    )
+
     _get_runner(request).start(
         job_id=job_id,
         input_path=input_path,
         output_dir=output_dir,
         variations=variations,
+        mode=mode,
+        owner=dono,
     )
 
     job = await repository.get_job(job_id)
@@ -165,6 +239,7 @@ async def create_job(
         job_id=job_id,
         status=JobStatus.PENDING,
         num_variations=num_variations,
+        mode=mode,
         created_at=job["created_at"],
     )
 
@@ -202,7 +277,17 @@ async def cancel_job(
     if not current_status.is_terminal:
         cancelled = await _get_runner(request).cancel(job_id)
         if not cancelled:
+            # O job ainda não tinha task viva (pendente ou já removida): o
+            # arquivo de entrada continuaria em disco sem ninguém para
+            # apagá-lo, então a limpeza acontece aqui.
             await repository.set_job_status(job_id, JobStatus.CANCELLED)
+            await storage.remove_path(Path(job["input_path"]))
+            log_event(
+                logger,
+                "job.cancelled",
+                job_id=job_id,
+                owner=owner_id(api_key_hash),
+            )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -285,11 +370,25 @@ async def download_all(
     archive_path = output_dir / f"{job_id}.zip"
     await storage.build_zip_file(output_dir, concluidas, archive_path)
 
+    async def _apos_o_envio() -> None:
+        # O ZIP é derivado: apagar depois do envio evita dobrar o espaço
+        # ocupado por cada job no disco.
+        archive_path.unlink(missing_ok=True)
+        if not settings.delete_after_batch_download:
+            return
+        await maintenance.purge_job_files(job)
+        await repository.mark_expired(job_id)
+        log_event(
+            logger,
+            "job.purged_after_download",
+            job_id=job_id,
+            owner=owner_id(api_key_hash),
+            bytes_total=total_bytes,
+        )
+
     return FileResponse(
         archive_path,
         media_type="application/zip",
         filename=f"variacoes_{job_id}.zip",
-        # O ZIP é derivado: apagar depois do envio evita dobrar o espaço
-        # ocupado por cada job no disco.
-        background=BackgroundTask(archive_path.unlink, missing_ok=True),
+        background=BackgroundTask(_apos_o_envio),
     )

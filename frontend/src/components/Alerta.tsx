@@ -1,7 +1,8 @@
 import type { ReactElement } from 'react';
 import { Botao } from './Botao.tsx';
+import { Icone, type NomeDoIcone } from './Icone.tsx';
 
-export type TomDoAlerta = 'erro' | 'aviso' | 'informacao';
+export type TomDoAlerta = 'erro' | 'aviso' | 'informacao' | 'sucesso';
 
 interface AlertaProps {
   tom?: TomDoAlerta;
@@ -12,16 +13,29 @@ interface AlertaProps {
   acaoCarregando?: boolean;
 }
 
+/**
+ * A faixa colorida à esquerda dá o tom antes da leitura; o ícone e o texto
+ * repetem a informação, para quem não distingue as cores.
+ */
 const ESTILO_POR_TOM: Record<TomDoAlerta, string> = {
-  erro: 'border-erro/50 bg-erro/10',
-  aviso: 'border-alerta/50 bg-alerta/10',
-  informacao: 'border-borda bg-superficie-suave',
+  erro: 'border-erro/40 bg-erro-suave before:bg-erro',
+  aviso: 'border-alerta/40 bg-alerta-suave before:bg-alerta',
+  informacao: 'border-borda bg-superficie before:bg-borda-forte',
+  sucesso: 'border-sucesso/40 bg-sucesso-suave before:bg-sucesso',
 };
 
-const ICONE_POR_TOM: Record<TomDoAlerta, string> = {
-  erro: '!',
-  aviso: '!',
-  informacao: 'i',
+const COR_DO_ICONE: Record<TomDoAlerta, string> = {
+  erro: 'text-erro',
+  aviso: 'text-alerta',
+  informacao: 'text-texto-fraco',
+  sucesso: 'text-sucesso',
+};
+
+const ICONE_POR_TOM: Record<TomDoAlerta, NomeDoIcone> = {
+  erro: 'alerta',
+  aviso: 'alerta',
+  informacao: 'informacao',
+  sucesso: 'confirmado',
 };
 
 export function Alerta({
@@ -35,21 +49,20 @@ export function Alerta({
   return (
     <div
       role={tom === 'erro' ? 'alert' : 'status'}
-      className={`flex flex-col gap-3 rounded-xl border p-4 sm:flex-row
-                  sm:items-center sm:justify-between ${ESTILO_POR_TOM[tom]}`}
+      className={`relative flex flex-col gap-3 overflow-hidden rounded-xl
+                  border py-3 pr-4 pl-5 sm:flex-row sm:items-center
+                  sm:justify-between sm:gap-4
+                  before:absolute before:inset-y-0 before:left-0 before:w-1
+                  before:content-[''] ${ESTILO_POR_TOM[tom]}`}
     >
-      <div className="flex items-start gap-3">
-        <span
-          aria-hidden="true"
-          className="mt-0.5 flex size-6 shrink-0 items-center justify-center
-                     rounded-full border border-current text-xs font-bold"
-        >
-          {ICONE_POR_TOM[tom]}
+      <div className="flex min-w-0 items-start gap-2.5">
+        <span className={`mt-0.5 ${COR_DO_ICONE[tom]}`}>
+          <Icone nome={ICONE_POR_TOM[tom]} tamanho={16} />
         </span>
 
         <div className="min-w-0">
-          <p className="font-semibold text-texto">{titulo}</p>
-          <p className="mt-1 text-sm text-texto-suave break-words">
+          <p className="text-nota font-semibold text-texto">{titulo}</p>
+          <p className="mt-0.5 text-nota break-words text-texto-suave">
             {mensagem}
           </p>
         </div>
@@ -58,6 +71,7 @@ export function Alerta({
       {rotuloDaAcao !== undefined && aoAcionar !== undefined ? (
         <Botao
           variante="secundario"
+          tamanho="compacto"
           onClick={aoAcionar}
           carregando={acaoCarregando}
           className="shrink-0 self-start sm:self-auto"

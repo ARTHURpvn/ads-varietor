@@ -8,6 +8,7 @@ from pathlib import Path
 
 from video_variations.core.ffmpeg import render_variation
 from video_variations.core.models import (
+    ProcessingMode,
     VariationParams,
     VariationResult,
     VariationStatus,
@@ -29,6 +30,7 @@ async def render_batch(
     on_result: ProgressCallback | None = None,
     info: VideoInfo | None = None,
     semaphore: asyncio.Semaphore | None = None,
+    mode: ProcessingMode = ProcessingMode.FULL,
 ) -> list[VariationResult]:
     """Renderiza todas as variações respeitando o limite de concorrência.
 
@@ -56,6 +58,7 @@ async def render_batch(
                 info=video_info,
                 overlay_video=overlay_video,
                 timeout_seconds=timeout_seconds,
+                mode=mode,
             )
         if on_result is not None:
             await on_result(result)

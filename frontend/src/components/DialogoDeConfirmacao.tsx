@@ -105,8 +105,8 @@ export function DialogoDeConfirmacao({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70
-                 p-4 sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center
+                 bg-[rgb(4_12_14/70%)] p-4 backdrop-blur-sm sm:items-center"
     >
       <div
         ref={dialogoRef}
@@ -115,18 +115,22 @@ export function DialogoDeConfirmacao({
         aria-labelledby={tituloId}
         aria-describedby={descricaoId}
         tabIndex={-1}
-        className="w-full max-w-md rounded-2xl border border-borda
-                   bg-superficie p-6 shadow-2xl"
+        className="w-full max-w-md animate-surgir rounded-2xl border
+                   border-borda bg-superficie p-5
+                   shadow-[var(--sombra-elevada)]"
       >
-        <h2 id={tituloId} className="text-lg font-semibold text-texto">
+        <h2
+          id={tituloId}
+          className="font-mono text-titulo font-semibold text-texto"
+        >
           {titulo}
         </h2>
 
-        <p id={descricaoId} className="mt-2 text-sm text-texto-suave">
+        <p id={descricaoId} className="mt-2 text-nota text-texto-suave">
           {descricao}
         </p>
 
-        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
           <Botao
             ref={botaoCancelarRef}
             variante="secundario"

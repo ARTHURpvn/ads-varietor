@@ -53,6 +53,33 @@ async def problem_error_handler(_: Request, exc: Exception) -> JSONResponse:
     return exc.to_response()
 
 
+async def validation_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    """Converte o 422 do FastAPI para problem+json.
+
+    O handler padrão devolve `{"detail": [...]}` em application/json, fora do
+    contrato de erro da API — e com os detalhes internos da validação.
+    """
+    del exc  # o conteúdo da validação não é exposto ao cliente
+    return ProblemError(
+        status=422,
+        title="Requisição inválida",
+        detail="Os dados enviados não estão no formato esperado.",
+    ).to_response()
+
+
+async def http_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    """Converte os erros HTTP do Starlette (404 de rota, 405, ...)."""
+    status = getattr(exc, "status_code", 500)
+    detalhes = {
+        404: ("Recurso não encontrado", "O endereço solicitado não existe."),
+        405: ("Método não permitido", "Esta operação não é aceita neste endereço."),
+    }
+    title, detail = detalhes.get(
+        status, ("Erro na requisição", "Não foi possível concluir a operação.")
+    )
+    return ProblemError(status=status, title=title, detail=detail).to_response()
+
+
 async def unhandled_error_handler(_: Request, __: Exception) -> JSONResponse:
     """Converte qualquer exceção não tratada numa resposta genérica.
 
@@ -113,6 +140,33 @@ def storage_full() -> ProblemError:
         status=507,
         title="Sem espaço disponível",
         detail="O serviço está sem espaço para novos vídeos. Tente mais tarde.",
+    )
+
+
+def _formatar_bytes(total: int) -> str:
+    """Formata um tamanho na maior unidade que ainda dá um número legível.
+
+    Sem isso, uma cota pequena aparecia para o usuário como "0.0 GB".
+    """
+    for unidade, fator in (("GB", 1024**3), ("MB", 1024**2), ("KB", 1024)):
+        if total >= fator:
+            return f"{total / fator:.1f} {unidade}"
+    return f"{total} bytes"
+
+
+def key_quota_exceeded(quota_bytes: int) -> ProblemError:
+    """507 de limite individual, distinto do 507 de serviço lotado.
+
+    Só o limite da própria chave aparece; o consumo das outras chaves e a
+    quota global não são revelados.
+    """
+    return ProblemError(
+        status=507,
+        title="Seu limite de armazenamento foi atingido",
+        detail=(
+            f"Sua cota de {_formatar_bytes(quota_bytes)} está cheia. Baixe e "
+            "apague jobs anteriores, ou aguarde a limpeza automática."
+        ),
     )
 
 

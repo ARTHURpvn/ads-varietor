@@ -1,15 +1,22 @@
 import { requestBlob, requestEmpty, requestJson } from './client.ts';
-import type { CreatedJob, HealthStatus, Job } from './types.ts';
+import type {
+  CreatedJob,
+  HealthStatus,
+  Job,
+  ProcessingMode,
+} from './types.ts';
 
 export interface CreateJobInput {
   file: File;
   numVariations: number;
+  mode: ProcessingMode;
 }
 
 export async function createJob(input: CreateJobInput): Promise<CreatedJob> {
   const formData = new FormData();
   formData.append('file', input.file);
   formData.append('num_variations', String(input.numVariations));
+  formData.append('mode', input.mode);
 
   return await requestJson<CreatedJob>('/jobs', {
     method: 'POST',

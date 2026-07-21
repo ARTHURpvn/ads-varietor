@@ -16,7 +16,19 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Colunas adicionadas depois da versão 1. Bancos criados antes disso ganham
+# a coluna por ALTER TABLE no start; recriar a tabela perderia os jobs.
+# Colunas acrescentadas depois da v1 do schema. `CREATE TABLE IF NOT EXISTS`
+# não altera tabela existente, então toda coluna nova precisa estar aqui —
+# senão um banco já em uso continua sem ela e as queries quebram.
+ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("jobs", "mode", "TEXT NOT NULL DEFAULT 'full'"),
+    ("jobs", "source_md5", "TEXT"),
+    ("jobs", "input_bytes", "INTEGER"),
+    ("variations", "md5", "TEXT"),
+)
 
 SCHEMA_STATEMENTS = (
     """
@@ -30,7 +42,10 @@ SCHEMA_STATEMENTS = (
         api_key_hash    TEXT NOT NULL,
         status          TEXT NOT NULL,
         num_variations  INTEGER NOT NULL,
+        mode            TEXT NOT NULL DEFAULT 'full',
+        source_md5      TEXT,
         input_path      TEXT NOT NULL,
+        input_bytes     INTEGER,
         output_dir      TEXT NOT NULL,
         error           TEXT,
         created_at      TEXT NOT NULL,
@@ -45,6 +60,7 @@ SCHEMA_STATEMENTS = (
         params_json  TEXT NOT NULL,
         error        TEXT,
         size_bytes   INTEGER,
+        md5          TEXT,
         PRIMARY KEY (job_id, variation_id),
         FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
     )
@@ -124,15 +140,41 @@ class JobRepository:
     # --- Schema ----------------------------------------------------------
 
     def initialize_sync(self) -> None:
-        """Cria o schema e registra a versão. Idempotente."""
+        """Cria o schema, aplica migrações aditivas e registra a versão.
+
+        Idempotente: pode rodar a cada start do processo.
+        """
         with self._connect() as connection:
             for statement in SCHEMA_STATEMENTS:
                 connection.execute(statement)
+            self._apply_additive_columns(connection)
+
             row = connection.execute("SELECT version FROM schema_version").fetchone()
             if row is None:
                 connection.execute(
                     "INSERT INTO schema_version (version) VALUES (?)",
                     (SCHEMA_VERSION,),
+                )
+            elif int(row["version"]) < SCHEMA_VERSION:
+                connection.execute(
+                    "UPDATE schema_version SET version = ?", (SCHEMA_VERSION,)
+                )
+
+    @staticmethod
+    def _apply_additive_columns(connection: sqlite3.Connection) -> None:
+        """Adiciona colunas novas em bancos criados por versões anteriores.
+
+        Os nomes vêm de uma constante do módulo, nunca de entrada externa —
+        `ALTER TABLE` não aceita placeholder para identificador.
+        """
+        for tabela, coluna, tipo in ADDITIVE_COLUMNS:
+            existentes = {
+                str(linha["name"])
+                for linha in connection.execute(f"PRAGMA table_info({tabela})")
+            }
+            if coluna not in existentes:
+                connection.execute(
+                    f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}"
                 )
 
     async def initialize(self) -> None:
@@ -147,6 +189,9 @@ class JobRepository:
         api_key_hash: str,
         num_variations: int,
         input_path: Path,
+        mode: str = "full",
+        source_md5: str | None = None,
+        input_bytes: int | None = None,
         output_dir: Path,
         variations: list[tuple[str, dict[str, Any]]],
     ) -> None:
@@ -155,16 +200,20 @@ class JobRepository:
             connection.execute(
                 """
                 INSERT INTO jobs (
-                    job_id, api_key_hash, status, num_variations,
-                    input_path, output_dir, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    job_id, api_key_hash, status, num_variations, mode,
+                    source_md5, input_path, input_bytes, output_dir,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
                     api_key_hash,
                     JobStatus.PENDING.value,
                     num_variations,
+                    mode,
+                    source_md5,
                     str(input_path),
+                    input_bytes,
                     str(output_dir),
                     timestamp,
                     timestamp,
@@ -188,6 +237,9 @@ class JobRepository:
         api_key_hash: str,
         num_variations: int,
         input_path: Path,
+        mode: str = "full",
+        source_md5: str | None = None,
+        input_bytes: int | None = None,
         output_dir: Path,
         variations: list[tuple[str, dict[str, Any]]],
     ) -> None:
@@ -196,6 +248,9 @@ class JobRepository:
             job_id=job_id,
             api_key_hash=api_key_hash,
             num_variations=num_variations,
+            mode=mode,
+            source_md5=source_md5,
+            input_bytes=input_bytes,
             input_path=input_path,
             output_dir=output_dir,
             variations=variations,
@@ -248,15 +303,16 @@ class JobRepository:
         status: str,
         error: str | None,
         size_bytes: int | None,
+        md5: str | None,
     ) -> None:
         with self._connect() as connection:
             connection.execute(
                 """
                 UPDATE variations
-                   SET status = ?, error = ?, size_bytes = ?
+                   SET status = ?, error = ?, size_bytes = ?, md5 = ?
                  WHERE job_id = ? AND variation_id = ?
                 """,
-                (status, error, size_bytes, job_id, variation_id),
+                (status, error, size_bytes, md5, job_id, variation_id),
             )
             connection.execute(
                 "UPDATE jobs SET updated_at = ? WHERE job_id = ?", (_now(), job_id)
@@ -270,6 +326,7 @@ class JobRepository:
         status: str,
         error: str | None = None,
         size_bytes: int | None = None,
+        md5: str | None = None,
     ) -> None:
         await asyncio.to_thread(
             self._set_variation_result_sync,
@@ -278,6 +335,7 @@ class JobRepository:
             status,
             error,
             size_bytes,
+            md5,
         )
 
     # --- Leitura ---------------------------------------------------------
@@ -291,7 +349,7 @@ class JobRepository:
                 return None
             variation_rows = connection.execute(
                 """
-                SELECT variation_id, status, params_json, error, size_bytes
+                SELECT variation_id, status, params_json, error, size_bytes, md5
                   FROM variations
                  WHERE job_id = ?
                  ORDER BY variation_id
@@ -307,6 +365,7 @@ class JobRepository:
                 "params": json.loads(row["params_json"]),
                 "error": row["error"],
                 "size_bytes": row["size_bytes"],
+                "md5": row["md5"],
             }
             for row in variation_rows
         ]
@@ -377,6 +436,114 @@ class JobRepository:
 
     async def mark_expired(self, job_id: str) -> None:
         await asyncio.to_thread(self._mark_expired_sync, job_id)
+
+    # --- Uso e reconciliação ---------------------------------------------
+
+    def _count_jobs_by_status_sync(
+        self, api_key_hash: str | None
+    ) -> dict[str, int]:
+        with self._connect() as connection:
+            if api_key_hash is None:
+                rows = connection.execute(
+                    "SELECT status, COUNT(*) AS total FROM jobs GROUP BY status"
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT status, COUNT(*) AS total
+                      FROM jobs
+                     WHERE api_key_hash = ?
+                     GROUP BY status
+                    """,
+                    (api_key_hash,),
+                ).fetchall()
+        return {str(row["status"]): int(row["total"]) for row in rows}
+
+    async def count_jobs_by_status(
+        self, api_key_hash: str | None = None
+    ) -> dict[str, int]:
+        """Conta jobs por status, no serviço inteiro ou de uma chave só."""
+        return await asyncio.to_thread(
+            self._count_jobs_by_status_sync, api_key_hash
+        )
+
+    def _bytes_used_by_key_sync(self, api_key_hash: str) -> int:
+        """Bytes contabilizados no banco para uma chave.
+
+        São duas parcelas: as saídas já gravadas (todas as variações de jobs
+        que ainda não expiraram) e as entradas que continuam em disco (só
+        jobs que ainda não terminaram — depois disso o upload é apagado).
+        """
+        with self._connect() as connection:
+            saidas = connection.execute(
+                """
+                SELECT COALESCE(SUM(v.size_bytes), 0) AS total
+                  FROM variations AS v
+                  JOIN jobs AS j ON j.job_id = v.job_id
+                 WHERE j.api_key_hash = ? AND j.status != ?
+                """,
+                (api_key_hash, JobStatus.EXPIRED.value),
+            ).fetchone()
+            entradas = connection.execute(
+                """
+                SELECT COALESCE(SUM(input_bytes), 0) AS total
+                  FROM jobs
+                 WHERE api_key_hash = ? AND status IN (?, ?)
+                """,
+                (
+                    api_key_hash,
+                    JobStatus.PENDING.value,
+                    JobStatus.RUNNING.value,
+                ),
+            ).fetchone()
+        return int(saidas["total"]) + int(entradas["total"])
+
+    async def bytes_used_by_key(self, api_key_hash: str) -> int:
+        return await asyncio.to_thread(
+            self._bytes_used_by_key_sync, api_key_hash
+        )
+
+    def _job_ids_with_expected_directory_sync(self) -> set[str]:
+        """Jobs que legitimamente podem ter um diretório de saída em disco.
+
+        Um job expirado já teve os arquivos apagados: se o diretório dele
+        ainda existe, é lixo de uma remoção interrompida no meio.
+        """
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT job_id FROM jobs WHERE status != ?",
+                (JobStatus.EXPIRED.value,),
+            ).fetchall()
+        return {str(row["job_id"]) for row in rows}
+
+    async def job_ids_with_expected_directory(self) -> set[str]:
+        return await asyncio.to_thread(
+            self._job_ids_with_expected_directory_sync
+        )
+
+    def _list_completed_jobs_sync(self) -> list[dict[str, str]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT job_id, output_dir FROM jobs WHERE status = ?",
+                (JobStatus.COMPLETED.value,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    async def list_completed_jobs(self) -> list[dict[str, str]]:
+        """Jobs concluídos, que obrigatoriamente deveriam ter diretório."""
+        return await asyncio.to_thread(self._list_completed_jobs_sync)
+
+    def _active_input_paths_sync(self) -> set[str]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT input_path FROM jobs WHERE status IN (?, ?)",
+                (JobStatus.PENDING.value, JobStatus.RUNNING.value),
+            ).fetchall()
+        return {str(row["input_path"]) for row in rows}
+
+    async def active_input_paths(self) -> set[str]:
+        """Uploads que ainda pertencem a um job não terminado."""
+        return await asyncio.to_thread(self._active_input_paths_sync)
 
     # --- Rate limiting ---------------------------------------------------
 

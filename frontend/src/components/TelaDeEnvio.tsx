@@ -1,12 +1,19 @@
 import { useId, useState, type FormEvent, type ReactElement } from 'react';
+import type { ProcessingMode } from '../api/types.ts';
 import { useSaudeDoServico } from '../hooks/useSaudeDoServico.ts';
+import { MODO_PADRAO, rotuloDasSaidas } from '../lib/modos.ts';
 import { AreaDeUpload } from './AreaDeUpload.tsx';
 import { Alerta } from './Alerta.tsx';
 import { Botao } from './Botao.tsx';
+import { Icone } from './Icone.tsx';
+import { SeletorDeModo } from './SeletorDeModo.tsx';
 
 export const MINIMO_DE_VARIACOES = 1;
 export const MAXIMO_DE_VARIACOES = 50;
 const PADRAO_DE_VARIACOES = 5;
+
+/** Quantidades mais pedidas, para não obrigar a digitar. */
+const ATALHOS_DE_QUANTIDADE: readonly number[] = [3, 5, 10, 25, 50];
 
 interface TelaDeEnvioProps {
   enviando: boolean;
@@ -14,7 +21,11 @@ interface TelaDeEnvioProps {
   erroDoEnvio: string | null;
   /** Descarta o erro da tentativa anterior de envio. */
   aoLimparErroDoEnvio: () => void;
-  aoEnviar: (arquivo: File, numeroDeVariacoes: number) => void;
+  aoEnviar: (
+    arquivo: File,
+    numeroDeVariacoes: number,
+    modo: ProcessingMode,
+  ) => void;
   /** Oferta de retomar um trabalho salvo anteriormente. */
   jobSalvo?: { jobId: string; aoRetomar: () => void; aoDescartar: () => void };
 }
@@ -29,6 +40,7 @@ export function TelaDeEnvio({
   const campoQuantidadeId = useId();
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [quantidade, setQuantidade] = useState<number>(PADRAO_DE_VARIACOES);
+  const [modo, setModo] = useState<ProcessingMode>(MODO_PADRAO);
   const [erroLocal, setErroLocal] = useState<string | null>(null);
   const saude = useSaudeDoServico();
   const servicoDegradado = saude.data?.status === 'degraded';
@@ -43,7 +55,9 @@ export function TelaDeEnvio({
     evento.preventDefault();
 
     if (arquivo === null) {
-      setErroLocal('Escolha um vídeo antes de gerar as variações.');
+      setErroLocal(
+        `Escolha um vídeo antes de gerar as ${rotuloDasSaidas(modo)}.`,
+      );
       return;
     }
 
@@ -53,27 +67,36 @@ export function TelaDeEnvio({
       quantidade > MAXIMO_DE_VARIACOES
     ) {
       setErroLocal(
-        `Escolha um número de variações entre ${MINIMO_DE_VARIACOES} e ` +
-          `${MAXIMO_DE_VARIACOES}.`,
+        `Escolha um número de ${rotuloDasSaidas(modo)} entre ` +
+          `${MINIMO_DE_VARIACOES} e ${MAXIMO_DE_VARIACOES}.`,
       );
       return;
     }
 
     setErroLocal(null);
-    aoEnviar(arquivo, quantidade);
+    aoEnviar(arquivo, quantidade, modo);
   }
 
   const mensagemDeErro = erroLocal ?? erroDoEnvio;
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-6 animate-surgir">
       <header>
-        <h1 className="text-2xl font-bold text-texto sm:text-3xl">
+        <p className="font-mono text-selo uppercase text-destaque">
+          01 · Envio
+        </p>
+
+        <h1
+          className="mt-1.5 font-mono text-secao font-semibold text-texto
+                     sm:text-display"
+        >
           Gere variações do seu vídeo
         </h1>
-        <p className="mt-2 text-sm text-texto-suave sm:text-base">
-          Envie um vídeo e escolha quantas versões você quer. Cada versão sai
-          com velocidade, cor e escala levemente diferentes.
+
+        <p className="mt-2 max-w-prose text-corpo text-texto-suave">
+          Envie um vídeo e escolha quantas cópias você quer. Cada cópia sai
+          como um arquivo diferente do original, para não ser tratada como
+          repetida.
         </p>
       </header>
 
@@ -97,7 +120,11 @@ export function TelaDeEnvio({
         />
       ) : null}
 
-      <form onSubmit={aoSubmeter} className="flex flex-col gap-5">
+      <form
+        onSubmit={aoSubmeter}
+        className="flex flex-col gap-5 rounded-2xl border border-borda
+                   bg-superficie p-4 shadow-[var(--sombra-cartao)] sm:p-5"
+      >
         <AreaDeUpload
           arquivoSelecionado={arquivo}
           desabilitado={enviando}
@@ -112,34 +139,81 @@ export function TelaDeEnvio({
           }}
         />
 
+        <hr className="border-borda" />
+
+        <SeletorDeModo
+          valor={modo}
+          desabilitado={enviando}
+          aoMudar={(escolhido) => {
+            limparErros();
+            setModo(escolhido);
+          }}
+        />
+
+        <hr className="border-borda" />
+
         <div className="flex flex-col gap-2">
           <label
             htmlFor={campoQuantidadeId}
-            className="text-sm font-semibold text-texto"
+            className="text-nota font-semibold text-texto"
           >
-            Quantas variações você quer?
+            Quantas {rotuloDasSaidas(modo)} você quer?
           </label>
 
-          <input
-            id={campoQuantidadeId}
-            type="number"
-            inputMode="numeric"
-            min={MINIMO_DE_VARIACOES}
-            max={MAXIMO_DE_VARIACOES}
-            step={1}
-            value={quantidade}
-            disabled={enviando}
-            onChange={(evento) => {
-              const valor = Number.parseInt(evento.target.value, 10);
-              setQuantidade(Number.isNaN(valor) ? MINIMO_DE_VARIACOES : valor);
-            }}
-            className="w-full max-w-40 rounded-lg border border-borda
-                       bg-superficie px-3 py-2.5 text-base text-texto"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              id={campoQuantidadeId}
+              type="number"
+              inputMode="numeric"
+              min={MINIMO_DE_VARIACOES}
+              max={MAXIMO_DE_VARIACOES}
+              step={1}
+              value={quantidade}
+              disabled={enviando}
+              onChange={(evento) => {
+                const valor = Number.parseInt(evento.target.value, 10);
+                setQuantidade(
+                  Number.isNaN(valor) ? MINIMO_DE_VARIACOES : valor,
+                );
+              }}
+              className="w-20 rounded-lg border border-borda-forte
+                         bg-fundo-alto px-3 py-2 text-center font-mono
+                         text-guia font-semibold text-texto"
+            />
 
-          <p className="text-xs text-texto-suave">
-            De {MINIMO_DE_VARIACOES} até {MAXIMO_DE_VARIACOES} variações por
-            envio.
+            <div
+              role="group"
+              aria-label="Quantidades usadas com frequência"
+              className="flex flex-wrap gap-1.5"
+            >
+              {ATALHOS_DE_QUANTIDADE.map((atalho) => (
+                <button
+                  key={atalho}
+                  type="button"
+                  disabled={enviando}
+                  aria-pressed={quantidade === atalho}
+                  onClick={() => setQuantidade(atalho)}
+                  className={`min-h-9 min-w-9 rounded-lg border px-2
+                              font-mono text-micro font-semibold
+                              transition-colors disabled:opacity-45
+                              ${
+                                quantidade === atalho
+                                  ? 'border-destaque bg-destaque-suave ' +
+                                    'text-destaque'
+                                  : 'border-borda bg-superficie ' +
+                                    'text-texto-suave ' +
+                                    'hover:border-borda-forte hover:text-texto'
+                              }`}
+                >
+                  {atalho}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-micro text-texto-fraco">
+            De {MINIMO_DE_VARIACOES} até {MAXIMO_DE_VARIACOES}{' '}
+            {rotuloDasSaidas(modo)} por envio.
           </p>
         </div>
 
@@ -152,12 +226,16 @@ export function TelaDeEnvio({
         ) : null}
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Botao type="submit" carregando={enviando} className="sm:w-auto">
-            {enviando ? 'Enviando vídeo...' : 'Gerar variações'}
+          <Botao
+            type="submit"
+            carregando={enviando}
+            icone={<Icone nome="raio" tamanho={15} />}
+          >
+            {enviando ? 'Enviando vídeo...' : `Gerar ${rotuloDasSaidas(modo)}`}
           </Botao>
 
           {jobSalvo !== undefined ? (
-            <Botao variante="secundario" onClick={jobSalvo.aoDescartar}>
+            <Botao variante="discreto" onClick={jobSalvo.aoDescartar}>
               Descartar trabalho anterior
             </Botao>
           ) : null}

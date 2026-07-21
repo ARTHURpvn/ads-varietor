@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 
+from video_variations.api.observability import log_event
 from video_variations.core.batch import render_batch
 from video_variations.core.models import (
+    ProcessingMode,
     VariationParams,
     VariationResult,
     VariationStatus,
@@ -38,6 +41,8 @@ class JobRunner:
     def start(
         self, *, job_id: str, input_path: Path, output_dir: Path,
         variations: list[VariationParams],
+        mode: ProcessingMode = ProcessingMode.FULL,
+        owner: str | None = None,
     ) -> None:
         """Dispara o processamento do job sem esperar pela conclusão."""
         task = asyncio.create_task(
@@ -46,6 +51,8 @@ class JobRunner:
                 input_path=input_path,
                 output_dir=output_dir,
                 variations=variations,
+                mode=mode,
+                owner=owner,
             ),
             name=f"job-{job_id}",
         )
@@ -76,8 +83,11 @@ class JobRunner:
         input_path: Path,
         output_dir: Path,
         variations: list[VariationParams],
+        mode: ProcessingMode = ProcessingMode.FULL,
+        owner: str | None = None,
     ) -> None:
         await self._repository.set_job_status(job_id, JobStatus.RUNNING)
+        inicio = time.monotonic()
 
         async def on_result(result: VariationResult) -> None:
             await self._repository.set_variation_result(
@@ -86,47 +96,101 @@ class JobRunner:
                 status=result.status.value,
                 error=result.error,
                 size_bytes=result.size_bytes,
+                md5=result.md5,
             )
 
         try:
-            info = await probe_video(input_path)
-            results = await render_batch(
-                input_video=input_path,
-                output_dir=output_dir,
-                variations=variations,
-                timeout_seconds=self._settings.ffmpeg_timeout_seconds,
-                on_result=on_result,
-                info=info,
-                semaphore=self._semaphore,
-            )
-        except asyncio.CancelledError:
-            # As variações que não chegaram a rodar ficariam eternamente
-            # "na fila" na tela do usuário se não fossem encerradas aqui.
-            await self._repository.fail_unfinished_variations(
-                job_id, "Cancelado antes de terminar."
-            )
-            await self._repository.set_job_status(job_id, JobStatus.CANCELLED)
-            raise
-        except Exception:
-            logger.exception("Falha ao processar o job %s", job_id)
-            await self._repository.set_job_status(
-                job_id,
-                JobStatus.FAILED,
-                "Não foi possível processar o vídeo enviado.",
-            )
-            return
+            try:
+                info = await probe_video(input_path)
+                results = await render_batch(
+                    input_video=input_path,
+                    output_dir=output_dir,
+                    variations=variations,
+                    timeout_seconds=self._settings.ffmpeg_timeout_seconds,
+                    on_result=on_result,
+                    info=info,
+                    semaphore=self._semaphore,
+                    mode=mode,
+                )
+            except asyncio.CancelledError:
+                # As variações que não chegaram a rodar ficariam eternamente
+                # "na fila" na tela do usuário se não fossem encerradas aqui.
+                await self._repository.fail_unfinished_variations(
+                    job_id, "Cancelado antes de terminar."
+                )
+                await self._repository.set_job_status(job_id, JobStatus.CANCELLED)
+                self._log_terminal(
+                    "job.cancelled", job_id, owner, inicio, bytes_total=None
+                )
+                raise
+            except Exception:
+                logger.exception("Falha ao processar o job %s", job_id)
+                await self._repository.set_job_status(
+                    job_id,
+                    JobStatus.FAILED,
+                    "Não foi possível processar o vídeo enviado.",
+                )
+                self._log_terminal(
+                    "job.failed", job_id, owner, inicio, bytes_total=None
+                )
+                return
 
-        succeeded = any(
-            result.status is VariationStatus.COMPLETED for result in results
+            gerados = sum(
+                result.size_bytes or 0
+                for result in results
+                if result.status is VariationStatus.COMPLETED
+            )
+            succeeded = any(
+                result.status is VariationStatus.COMPLETED for result in results
+            )
+            if succeeded:
+                await self._repository.set_job_status(job_id, JobStatus.COMPLETED)
+                self._log_terminal(
+                    "job.completed", job_id, owner, inicio, bytes_total=gerados
+                )
+            else:
+                await self._repository.set_job_status(
+                    job_id,
+                    JobStatus.FAILED,
+                    "Nenhuma variação pôde ser gerada a partir deste vídeo.",
+                )
+                self._log_terminal(
+                    "job.failed", job_id, owner, inicio, bytes_total=0
+                )
+        finally:
+            # O vídeo de entrada some em qualquer desfecho — sucesso, falha
+            # ou cancelamento. Apagar só no caminho feliz deixava o arquivo
+            # original no disco por todo o período de retenção justamente
+            # nos casos em que ele não serve mais para nada.
+            await self._discard_input(input_path, job_id)
+
+    async def _discard_input(self, input_path: Path, job_id: str) -> None:
+        """Apaga o upload sem deixar a falha de I/O escapar.
+
+        Este método roda no `finally` de um caminho que pode estar tratando
+        um cancelamento: uma exceção aqui mascararia o motivo real.
+        """
+        try:
+            await asyncio.shield(asyncio.to_thread(input_path.unlink, True))
+        except OSError:
+            logger.warning(
+                "Não foi possível apagar a entrada do job %s.", job_id
+            )
+
+    @staticmethod
+    def _log_terminal(
+        event: str,
+        job_id: str,
+        owner: str | None,
+        inicio: float,
+        *,
+        bytes_total: int | None,
+    ) -> None:
+        log_event(
+            logger,
+            event,
+            job_id=job_id,
+            owner=owner,
+            duration_seconds=time.monotonic() - inicio,
+            bytes_total=bytes_total,
         )
-        if succeeded:
-            await self._repository.set_job_status(job_id, JobStatus.COMPLETED)
-        else:
-            await self._repository.set_job_status(
-                job_id,
-                JobStatus.FAILED,
-                "Nenhuma variação pôde ser gerada a partir deste vídeo.",
-            )
-
-        # O arquivo enviado não é mais necessário depois da renderização.
-        await asyncio.to_thread(input_path.unlink, True)

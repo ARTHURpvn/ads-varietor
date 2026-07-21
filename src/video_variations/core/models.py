@@ -36,15 +36,22 @@ class VariationParams(BaseModel):
 
     metadata_title: str | None = Field(default=None, max_length=200)
     metadata_author: str | None = Field(default=None, max_length=200)
+    # Pares extras gravados no arquivo (encoder, creation_time, comment...).
+    # O comment carrega um identificador único, que é o que garante hash
+    # distinto mesmo entre saídas com parâmetros de vídeo iguais.
+    metadata_extra: dict[str, str] = Field(default_factory=dict)
 
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
     filter_type: FilterType = FilterType.NONE
     filter_value: float = Field(default=1.0, ge=0.0, le=2.0)
 
     background_color: Annotated[str, Field(pattern=HEX_COLOR_PATTERN.pattern)] = "000000"
-    bg_opacity: float = Field(default=1.0, ge=0.0, le=1.0)
-    video_opacity: float = Field(default=1.0, ge=0.1, le=1.0)
-    video_scale: float = Field(default=1.0, ge=0.1, le=1.0)
+    # Intensidade do véu de cor aplicado sobre a imagem. Valores altos
+    # deixam o vídeo lavado, por isso o teto é baixo.
+    tint_opacity: float = Field(default=0.0, ge=0.0, le=0.2)
+    # Sempre acima de 1: o vídeo é ampliado e cortado nas bordas, nunca
+    # reduzido — reduzir deixaria faixas de fundo à mostra.
+    video_scale: float = Field(default=1.0, ge=1.0, le=1.5)
 
     noise_audio: bool = False
     noise_level: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -52,6 +59,19 @@ class VariationParams(BaseModel):
     overlay_enabled: bool = False
     overlay_opacity: float = Field(default=0.0, ge=0.0, le=1.0)
     overlay_scale: float = Field(default=0.3, ge=0.05, le=1.0)
+
+
+class ProcessingMode(str, enum.Enum):
+    """Como cada variação é produzida.
+
+    FULL reencoda o vídeo aplicando os efeitos — é o que muda a imagem, e
+    custa minutos. METADATA_ONLY copia os streams sem tocar na imagem e só
+    reescreve os metadados: sai em frações de segundo e o arquivo continua
+    visualmente idêntico ao original, mudando apenas o hash.
+    """
+
+    FULL = "full"
+    METADATA_ONLY = "metadata_only"
 
 
 class VariationStatus(str, enum.Enum):
@@ -72,6 +92,7 @@ class VariationResult(BaseModel):
     size_bytes: int | None = None
     error: str | None = None
     duration_seconds: float | None = None
+    md5: str | None = None
 
 
 class VideoInfo(BaseModel):

@@ -144,8 +144,11 @@ export function ehTextoSeguroParaUsuario(valor: unknown): valor is string {
     /\//,
     /\\/,
     /Traceback/i,
-    /Error:/i,
-    /Exception/i,
+    // Sem exigir os dois-pontos: nomes de exceção soltos no meio da frase
+    // (KeyError, ValueError, OSError) passariam por um padrão /Error:/.
+    /\w*Error\b/i,
+    /\w*Exception\b/i,
+    /Traceback/i,
     /\bat\s+\w+\.\w+/,
     /\b[45]\d{2}\b/,
   ];

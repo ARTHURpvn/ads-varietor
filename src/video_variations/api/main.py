@@ -6,56 +6,36 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from video_variations.api import storage
+from video_variations.api import maintenance
 from video_variations.api.errors import (
     ProblemError,
+    http_error_handler,
     problem_error_handler,
     unhandled_error_handler,
+    validation_error_handler,
 )
+from video_variations.api.observability import configure_logging
 from video_variations.api.repository import JobRepository
-from video_variations.api.routes import health, jobs
+from video_variations.api.routes import health, jobs, usage
 from video_variations.api.runner import JobRunner
 from video_variations.core.probe import find_binary
-from video_variations.settings import Settings, get_settings
+from video_variations.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
 API_PREFIX = "/api/v1"
 
 
-async def _cleanup_loop(app: FastAPI, settings: Settings) -> None:
-    """Apaga periodicamente os jobs que passaram do período de retenção."""
-    repository: JobRepository = app.state.repository
-    while True:
-        try:
-            await asyncio.sleep(settings.cleanup_interval_seconds)
-            expired = await repository.list_expired_jobs(settings.retention_hours)
-            for job in expired:
-                await storage.remove_path(Path(job["output_dir"]))
-                await storage.remove_path(Path(job["input_path"]))
-                await repository.mark_expired(job["job_id"])
-            if expired:
-                logger.info("Limpeza removeu %d jobs expirados.", len(expired))
-
-            orfaos = await storage.remove_stale_uploads(
-                settings.uploads_dir, settings.retention_hours
-            )
-            if orfaos:
-                logger.info("Limpeza removeu %d upload(s) órfão(s).", orfaos)
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # pragma: no cover - a limpeza não pode derrubar o app
-            logger.exception("Falha na rotina de limpeza.")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    configure_logging(level=settings.log_level, json_output=settings.log_json)
     settings.ensure_directories()
 
     # Falhar aqui é melhor que aceitar jobs que nunca vão renderizar.
@@ -86,15 +66,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             interrupted,
         )
 
+    # Antes de aceitar tráfego: um crash anterior pode ter deixado diretório
+    # sem registro e registro sem diretório, e nenhum dos dois volta a ser
+    # candidato à retenção por conta própria.
+    if settings.reconcile_enabled:
+        await maintenance.run_reconcile(repository, settings)
+    await maintenance.check_storage_threshold(settings)
+
     app.state.repository = repository
     app.state.runner = JobRunner(repository, settings)
-    cleanup_task = asyncio.create_task(_cleanup_loop(app, settings), name="cleanup")
+    maintenance_task = asyncio.create_task(
+        maintenance.maintenance_loop(repository, settings), name="maintenance"
+    )
 
     try:
         yield
     finally:
-        cleanup_task.cancel()
-        await asyncio.gather(cleanup_task, return_exceptions=True)
+        maintenance_task.cancel()
+        await asyncio.gather(maintenance_task, return_exceptions=True)
         await app.state.runner.shutdown()
 
 
@@ -122,10 +111,16 @@ def create_app() -> FastAPI:
             allow_headers=["X-API-Key", "Content-Type"],
         )
 
+    # Todos os caminhos de erro precisam sair em problem+json: sem os dois
+    # handlers do meio, os erros gerados pelo próprio framework escapariam do
+    # contrato e exporiam os detalhes internos da validação.
     app.add_exception_handler(ProblemError, problem_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.add_exception_handler(StarletteHTTPException, http_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
 
     app.include_router(jobs.router, prefix=API_PREFIX)
+    app.include_router(usage.router, prefix=API_PREFIX)
     app.include_router(health.router, prefix=API_PREFIX)
     return app
 

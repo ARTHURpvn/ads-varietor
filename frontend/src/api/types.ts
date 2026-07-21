@@ -10,6 +10,14 @@ export type JobStatus =
 
 export type VariationStatus = 'pending' | 'running' | 'completed' | 'failed';
 
+/**
+ * Como cada saída é produzida.
+ * - `full`: reprocessa o vídeo aplicando efeitos. A imagem muda; leva minutos.
+ * - `metadata_only`: copia o conteúdo e só reescreve os metadados. A imagem e
+ *   o som ficam idênticos; muda apenas o hash. Leva menos de um segundo.
+ */
+export type ProcessingMode = 'full' | 'metadata_only';
+
 export interface VariationParams {
   speed: number;
   filter_type: string;
@@ -24,6 +32,8 @@ export interface Variation {
   status: VariationStatus;
   error: string | null;
   size_bytes: number | null;
+  /** MD5 do arquivo gerado. null enquanto a variação não terminou. */
+  md5: string | null;
   params: VariationParams;
 }
 
@@ -37,6 +47,7 @@ export interface CreatedJob {
   job_id: string;
   status: 'pending';
   num_variations: number;
+  mode: ProcessingMode;
   created_at: string;
 }
 
@@ -44,6 +55,9 @@ export interface Job {
   job_id: string;
   status: JobStatus;
   num_variations: number;
+  mode: ProcessingMode;
+  /** MD5 do arquivo enviado, para comparar com o de cada saída. */
+  source_md5: string | null;
   created_at: string;
   updated_at: string;
   /** Motivo da falha do trabalho inteiro. null quando não falhou. */

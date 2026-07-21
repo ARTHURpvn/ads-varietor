@@ -18,7 +18,9 @@ from typing import Protocol
 ALLOWED_EXTENSIONS = frozenset({".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"})
 DEFAULT_EXTENSION = ".mp4"
 CHUNK_SIZE = 1024 * 1024
-SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# `\Z` e não `$`: em Python, `$` também casa antes de um \n final, então o
+# padrão com `$` aceitaria "job\n" como identificador válido.
+SAFE_IDENTIFIER = re.compile(r"\A[A-Za-z0-9_-]{1,64}\Z")
 
 
 class UploadTooLargeError(ValueError):
@@ -107,7 +109,18 @@ async def save_upload(
 def _directory_size(path: Path) -> int:
     if not path.exists():
         return 0
-    return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+
+    total = 0
+    for item in path.rglob("*"):
+        try:
+            if item.is_file():
+                total += item.stat().st_size
+        except OSError:
+            # A rotina de limpeza e o próprio FFmpeg mexem nestes diretórios
+            # o tempo todo: um arquivo pode sumir entre o is_file e o stat.
+            # Ignorar o que desapareceu é mais correto que abortar a soma.
+            continue
+    return total
 
 
 async def get_used_bytes(storage_dir: Path) -> int:
@@ -127,27 +140,45 @@ async def remove_path(path: Path) -> None:
     await asyncio.to_thread(_remove_path, path)
 
 
-def _remove_stale_uploads(uploads_dir: Path, max_age_hours: int) -> int:
+def _list_job_directories(jobs_dir: Path) -> list[Path]:
+    if not jobs_dir.is_dir():
+        return []
+    return [item for item in jobs_dir.iterdir() if item.is_dir()]
+
+
+async def list_job_directories(jobs_dir: Path) -> list[Path]:
+    """Diretórios de saída existentes em disco, um por job."""
+    return await asyncio.to_thread(_list_job_directories, jobs_dir)
+
+
+def _remove_unreferenced_uploads(
+    uploads_dir: Path, referenced: frozenset[str], min_age_seconds: int
+) -> int:
     if not uploads_dir.is_dir():
         return 0
 
-    limite = time.time() - max_age_hours * 3600
+    limite = time.time() - min_age_seconds
     removidos = 0
     for item in uploads_dir.iterdir():
-        if item.is_file() and item.stat().st_mtime < limite:
+        if not item.is_file() or str(item) in referenced:
+            continue
+        # A folga de idade evita apagar um upload que acabou de ser gravado
+        # e ainda não virou registro no banco.
+        if item.stat().st_mtime < limite:
             item.unlink(missing_ok=True)
             removidos += 1
     return removidos
 
 
-async def remove_stale_uploads(uploads_dir: Path, max_age_hours: int) -> int:
-    """Apaga uploads antigos que ficaram sem job associado.
-
-    O arquivo enviado é gravado antes do job existir no banco; se algo falhar
-    entre os dois passos, ninguém mais conhece aquele arquivo.
-    """
+async def remove_unreferenced_uploads(
+    uploads_dir: Path,
+    referenced: frozenset[str],
+    *,
+    min_age_seconds: int,
+) -> int:
+    """Apaga uploads que nenhum job ativo reivindica e já passaram da folga."""
     return await asyncio.to_thread(
-        _remove_stale_uploads, uploads_dir, max_age_hours
+        _remove_unreferenced_uploads, uploads_dir, referenced, min_age_seconds
     )
 
 
