@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-fundo: #0b1120;
+  --color-superficie: #16203a;
+  --color-superficie-suave: #1e2b4d;
+  --color-borda: #33415c;
+  --color-texto: #f1f5f9;
+  --color-texto-suave: #c3cede;
+  --color-destaque: #4f8cff;
+  --color-destaque-forte: #2f6ce5;
+  --color-sucesso: #2ecc8f;
+  --color-alerta: #ffb020;
+  --color-erro: #ff6b6b;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--color-fundo);
+    color: var(--color-texto);
+    font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Foco sempre visível, em qualquer elemento interativo. */
+  :focus-visible {
+    outline: 3px solid var(--color-destaque);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}

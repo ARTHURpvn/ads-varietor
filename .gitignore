@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Configuração local com segredos
+.env
+
+# Dados do serviço: uploads, saídas e banco
+storage/
+output/
+
+# Node
+node_modules/
