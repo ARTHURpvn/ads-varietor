@@ -16,3 +16,7 @@ output/
 
 # Node
 node_modules/
+
+# Fixtures de teste servidos pelo dev server
+frontend/public/
+frontend/frontend/
