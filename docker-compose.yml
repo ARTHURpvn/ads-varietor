@@ -19,6 +19,13 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    # Bind no loopback, e não em 0.0.0.0: a porta fica alcançável só de dentro
+    # da máquina, para debug local no servidor. O tráfego público continua
+    # entrando pelo proxy da plataforma, que fala com o container pela rede
+    # interna. Trocar por "8037:8037" exporia o serviço direto na internet,
+    # sem TLS e sem o proxy na frente.
+    ports:
+      - "127.0.0.1:8037:8037"
     environment:
       # O Coolify substitui pelo domínio atribuído no painel e roteia o
       # tráfego para a porta 8037 do container.

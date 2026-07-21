@@ -60,12 +60,10 @@ BACKUP_FILE ?= storage-backup-$(shell date +%Y%m%d-%H%M%S).tar.gz
 docker-build:
 	@docker compose build
 
-# O frontend é buildado dentro da imagem web, então não há passo de build
-# no host. Fora do Coolify a porta precisa ser publicada: o override abaixo
-# faz isso só no uso local, sem sujar o compose que vai para a plataforma.
+# O frontend é buildado dentro da imagem, então não há passo de build no host.
+# A porta já é publicada no loopback pelo próprio compose.
 docker-up:
-	@printf 'services:\n  app:\n    ports:\n      - "8037:8037"\n' > .compose.local.yml
-	@docker compose -f docker-compose.yml -f .compose.local.yml up -d
+	@docker compose up -d
 	@echo "Subiu em http://127.0.0.1:8037 — acompanhe com 'make docker-logs'."
 
 docker-down:
@@ -73,12 +71,12 @@ docker-down:
 	@echo "Containers parados. O volume '$(DOCKER_VOLUME)' foi preservado."
 
 docker-logs:
-	@docker compose logs -f api
+	@docker compose logs -f app
 
 # --- Operação do storage --------------------------------------------------
 
 storage-usage:
-	@docker compose exec api du -sh /data /data/uploads /data/jobs 2>/dev/null || \
+	@docker compose exec app du -sh /data /data/uploads /data/jobs 2>/dev/null || \
 		echo "A API precisa estar rodando: make docker-up"
 
 # Backup a frio: o tar roda num container efêmero montando o mesmo volume,
