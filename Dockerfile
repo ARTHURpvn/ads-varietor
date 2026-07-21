@@ -49,12 +49,12 @@ RUN mkdir -p /data && chown -R app:app /data
 
 USER app
 VOLUME ["/data"]
-EXPOSE 8000
+EXPOSE 8037
 
 # O /health não depende de autenticação justamente para servir aqui.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; \
-sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).status == 200 else 1)"
+sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8037/api/v1/health', timeout=4).status == 200 else 1)"
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
@@ -62,7 +62,7 @@ ENTRYPOINT ["/usr/bin/tini", "--"]
 # com dois workers cada um abriria o próprio limite.
 CMD ["uvicorn", "ads_varietor.api.main:app", \
      "--host", "0.0.0.0", \
-     "--port", "8000", \
+     "--port", "8037", \
      "--workers", "1", \
      "--proxy-headers", \
      "--forwarded-allow-ips", "*"]

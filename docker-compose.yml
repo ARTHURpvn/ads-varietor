@@ -1,6 +1,6 @@
 # Stack de produção, escrita para rodar no Coolify.
 #
-# Topologia: proxy da plataforma -> web (Caddy, porta 8037) -> api (8000).
+# Topologia: proxy da plataforma -> web (Caddy, porta 8037) -> api (8037, rede interna).
 #
 # O Caddy serve o frontend e injeta o header X-API-Key nas chamadas /api/*.
 # Esse é o modelo de segurança do projeto: o browser nunca vê a chave, então
@@ -54,9 +54,9 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     # Sem `ports` e sem domínio: serviço privado, alcançável apenas pelo web
-    # através da rede interna da stack, em http://api:8000.
+    # através da rede interna da stack, em http://api:8037.
     expose:
-      - "8000"
+      - "8037"
     environment:
       STORAGE_DIR: /data
       API_KEYS: ${API_KEYS:?defina API_KEYS com uma chave de 24+ caracteres}
@@ -83,7 +83,7 @@ services:
       # troca de imagem — sem ele, todo deploy perderia os jobs.
       - storage:/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health').read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8037/api/v1/health').read()"]
       interval: 30s
       timeout: 10s
       retries: 3

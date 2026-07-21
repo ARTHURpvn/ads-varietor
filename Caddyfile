@@ -59,7 +59,7 @@
 			max_size 200MiB
 		}
 
-		reverse_proxy api:8000 {
+		reverse_proxy api:8037 {
 			# Um cliente não pode escolher o próprio nível de acesso.
 			#
 			# ATENÇÃO: o Caddy aplica as operações de header na ordem

@@ -43,7 +43,7 @@ API, para conferir que nenhum se repete.
 
 ```bash
 make setup      # venv, dependências e um .env com API key gerada
-make api        # API em http://127.0.0.1:8000
+make api        # API em http://127.0.0.1:8037
 make frontend   # interface em http://127.0.0.1:5173
 ```
 

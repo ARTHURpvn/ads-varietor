@@ -18,7 +18,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:8037',
         changeOrigin: true,
         configure: (proxy: { on: (evento: string, ouvinte: (requisicao: ClientRequest) => void) => void }) => {
           proxy.on('proxyReq', (requisicao: ClientRequest) => {

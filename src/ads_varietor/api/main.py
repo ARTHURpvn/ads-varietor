@@ -139,6 +139,6 @@ def run() -> None:  # pragma: no cover - entrada de execução
     uvicorn.run(
         "ads_varietor.api.main:app",
         host="127.0.0.1",
-        port=8000,
+        port=8037,
         workers=1,
     )

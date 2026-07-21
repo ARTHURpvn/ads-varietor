@@ -63,7 +63,7 @@ reverse proxy injeta o `X-API-Key`, e o browser nunca a vê.
 - [DÉBITO] Chave sem expiração nem rotação automática. Impacto: Médio ·
   Urgência: próximo trimestre · Dono: mantenedor.
 - [DÉBITO] O serviço depende do proxy estar corretamente configurado. Um deploy
-  que exponha a porta 8000 diretamente perde a camada de TLS. Documentado na
+  que exponha a porta 8037 diretamente perde a camada de TLS. Documentado na
   instalação. Impacto: Alto · Urgência: sprint atual · Dono: quem opera.
 
 ## Conformidade

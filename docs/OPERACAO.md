@@ -162,7 +162,7 @@ make docker-logs
 Topologia:
 
 ```
-internet ──443──▶ proxy da plataforma ──8037──▶ web (Caddy) ──8000──▶ api
+internet ──443──▶ proxy da plataforma ──8037──▶ web (Caddy) ──8037──▶ api
                   (Traefik do Coolify,              │        (rede interna,
                    ou o seu, com TLS)               │      sem porta publicada)
                                                     ├── serve o frontend
@@ -192,7 +192,7 @@ O compose já está no formato que o Coolify espera:
 - **`SERVICE_FQDN_WEB_8037`** faz o Coolify apontar o domínio atribuído para a
   porta 8037 do container `web`.
 - O serviço `api` não recebe domínio: fica privado, alcançável só por
-  `http://api:8000` dentro da stack.
+  `http://api:8037` dentro da stack.
 
 Passos: crie um recurso do tipo *Docker Compose* apontando para o repositório,
 defina `API_KEYS` e `API_KEY_FRONTEND` nas variáveis de ambiente, atribua um

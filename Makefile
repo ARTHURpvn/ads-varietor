@@ -9,7 +9,7 @@ help:
 	@echo "ADS Varietor"
 	@echo ""
 	@echo "  make setup      — cria o venv, instala o pacote e o frontend"
-	@echo "  make api        — sobe a API em http://127.0.0.1:8000"
+	@echo "  make api        — sobe a API em http://127.0.0.1:8037"
 	@echo "  make frontend   — sobe o frontend em http://127.0.0.1:5173"
 	@echo "  make test       — roda a suite de testes"
 	@echo "  make run VIDEO=video.mp4 N=5 — gera variações pela CLI"
@@ -35,7 +35,7 @@ setup:
 	@echo "Pronto. Rode 'make api' e 'make frontend'."
 
 api:
-	@$(PYTHON) -m uvicorn ads_varietor.api.main:app --host 127.0.0.1 --port 8000
+	@$(PYTHON) -m uvicorn ads_varietor.api.main:app --host 127.0.0.1 --port 8037
 
 frontend:
 	@cd frontend && npm run dev
