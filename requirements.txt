@@ -1,0 +1,14 @@
+# Video Variations System Requirements
+
+# Nenhuma dependência Python é obrigatória
+# FFmpeg é processado via subprocess (deve estar instalado no sistema)
+
+# Opcionais (para funcionalidades avançadas):
+# Pillow==9.5.0  # Para manipulação de imagens/backgrounds
+# numpy==1.24.3  # Para processamento de áudio
+# click==8.1.3   # Para CLI mais avançado
+
+# Para desenvolvimento:
+# pytest==7.3.1  # Testes
+# black==23.3.0  # Formatação
+# flake8==5.0.4  # Linting

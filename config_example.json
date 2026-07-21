@@ -1,0 +1,62 @@
+{
+  "variations": [
+    {
+      "variation_id": "var_commercial_01",
+      "metadata_title": "Commercial Version 1",
+      "metadata_author": "Auto Generated",
+      "speed": 1.001234,
+      "filter_type": "brightness",
+      "filter_value": 1.05,
+      "background_color": "1a1a1a",
+      "bg_opacity": 0.95,
+      "video_opacity": 0.85,
+      "video_scale": 0.92,
+      "noise_audio": true,
+      "noise_level": 0.045,
+      "overlay_enabled": false,
+      "overlay_opacity": 0.1,
+      "overlay_scale": 0.3
+    },
+    {
+      "variation_id": "var_commercial_02",
+      "metadata_title": "Commercial Version 2",
+      "metadata_author": "Auto Generated",
+      "speed": 1.032451,
+      "filter_type": "contrast",
+      "filter_value": 1.12,
+      "background_color": "2a2a2a",
+      "bg_opacity": 0.92,
+      "video_opacity": 0.88,
+      "video_scale": 0.95,
+      "noise_audio": true,
+      "noise_level": 0.063,
+      "overlay_enabled": true,
+      "overlay_opacity": 0.08,
+      "overlay_scale": 0.25
+    },
+    {
+      "variation_id": "var_commercial_03",
+      "metadata_title": "Commercial Version 3",
+      "metadata_author": "Auto Generated",
+      "speed": 1.048329,
+      "filter_type": "saturate",
+      "filter_value": 1.08,
+      "background_color": "0f0f0f",
+      "bg_opacity": 0.98,
+      "video_opacity": 0.82,
+      "video_scale": 0.88,
+      "noise_audio": false,
+      "noise_level": 0.0,
+      "overlay_enabled": true,
+      "overlay_opacity": 0.12,
+      "overlay_scale": 0.35
+    }
+  ],
+  "processing": {
+    "max_workers": 4,
+    "video_codec": "libx264",
+    "preset": "ultrafast",
+    "crf": 23,
+    "audio_bitrate": "128k"
+  }
+}
