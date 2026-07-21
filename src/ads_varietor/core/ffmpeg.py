@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 from pathlib import Path
 
 from ads_varietor.core.models import (
@@ -29,6 +30,8 @@ MINIMUM_NOISE_DURATION_SECONDS = 1.0
 # por volta de -75 dB, contra -21 dB de um áudio comum: altera a faixa de
 # áudio sem que se ouça chiado.
 NOISE_MIX_WEIGHT = 0.15
+
+logger = logging.getLogger(__name__)
 
 
 class FilterGraphError(ValueError):
@@ -336,6 +339,16 @@ async def render_variation(
         # Manter esse arquivo faria o download em lote entregar um vídeo
         # corrompido junto com os bons.
         output_path.unlink(missing_ok=True)
+        logger.warning(
+            "ffmpeg excedeu o tempo limite",
+            extra={
+                "event": "ffmpeg.timeout",
+                "variation_id": params.variation_id,
+                "timeout_seconds": timeout_seconds,
+                "input_resolution": f"{info.width}x{info.height}",
+                "input_duration_seconds": round(info.duration_seconds, 1),
+            },
+        )
         return VariationResult(
             variation_id=params.variation_id,
             status=VariationStatus.FAILED,
@@ -355,6 +368,20 @@ async def render_variation(
         message = stderr.decode("utf-8", errors="replace").strip()
         last_line = message.splitlines()[-1] if message else "erro desconhecido"
         output_path.unlink(missing_ok=True)
+        # O stderr completo fica no log do servidor, e só ele: a resposta ao
+        # cliente leva uma linha resumida. Sem isto, diagnosticar uma falha
+        # que só acontece em produção vira adivinhação — o motivo real (falta
+        # de memória, codec, processo morto pelo sistema) mora aqui.
+        logger.error(
+            "ffmpeg falhou",
+            extra={
+                "event": "ffmpeg.failed",
+                "variation_id": params.variation_id,
+                "returncode": process.returncode,
+                "duration_seconds": round(elapsed, 2),
+                "stderr": message[-2000:],
+            },
+        )
         return VariationResult(
             variation_id=params.variation_id,
             status=VariationStatus.FAILED,
