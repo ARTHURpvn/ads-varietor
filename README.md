@@ -79,19 +79,32 @@ Documentação interativa em `/docs` com o serviço no ar.
 ## Deploy
 
 ```bash
-cp .env.example .env    # preencha API_KEYS e API_KEY_FRONTEND
+cp .env.example .env    # preencha API_KEYS
 make docker-up
 ```
 
-Sobe dois serviços: `api` (privado, só na rede interna) e `web`, um Caddy que
-serve a interface na porta **8037** e **injeta a API key** nas chamadas
-`/api/*` — a chave nunca chega ao navegador. O frontend é buildado dentro da
-imagem, então o deploy não depende de nada compilado na sua máquina.
+**Um container só**, na porta **8037**: a mesma aplicação serve a interface e a
+API, na mesma origem. O frontend é buildado dentro da imagem, então o deploy
+não depende de nada compilado na sua máquina.
 
 TLS fica com o proxy da plataforma. O compose está pronto para **Coolify**:
-sem portas publicadas, sem rede declarada e com `SERVICE_FQDN_WEB_8037` para o
+sem portas publicadas, sem rede declarada e com `SERVICE_FQDN_APP_8037` para o
 domínio. Passo a passo, backup e limpeza em
 [docs/OPERACAO.md](docs/OPERACAO.md).
+
+### Quem pode usar a API
+
+Duas formas de acesso, controladas por configuração:
+
+- **`UI_PUBLIC=true`** — quem abre o site usa a interface sem informar chave.
+  As chamadas são atribuídas a um dono público compartilhado, com quota e rate
+  limit próprios. Isso deixa a API acessível a qualquer visitante do endereço.
+- **API key** — obrigatória para uso programático, e continua valendo mesmo com
+  a interface pública. Cada chave tem quota e rate limit separados, e um job
+  criado por uma chave não é visível para outra nem para a interface pública.
+
+Com `UI_PUBLIC=false` a interface deixa de funcionar sozinha: toda chamada
+passa a exigir chave.
 
 ## Segurança
 

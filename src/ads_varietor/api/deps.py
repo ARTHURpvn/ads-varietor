@@ -43,8 +43,18 @@ async def require_api_key(
     api_key: Annotated[str | None, Depends(api_key_header)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> str:
-    """Valida a chave e devolve o hash dela, usado como dono dos jobs."""
-    if not api_key or not settings.api_key_hashes:
+    """Valida a chave e devolve o hash dela, usado como dono dos jobs.
+
+    Com `UI_PUBLIC` ligado, uma requisição sem chave é aceita e atribuída a
+    um dono público compartilhado. Uma chave enviada continua sendo validada:
+    mandar chave errada é erro, e não vira acesso público por acidente.
+    """
+    if not api_key:
+        if settings.ui_public:
+            return settings.public_owner_hash
+        raise errors.unauthorized()
+
+    if not settings.api_key_hashes:
         raise errors.unauthorized()
 
     candidate_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()

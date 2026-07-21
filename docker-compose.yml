@@ -1,67 +1,46 @@
 # Stack de produção, escrita para rodar no Coolify.
 #
-# Topologia: proxy da plataforma -> web (Caddy, porta 8037) -> api (8037, rede interna).
-#
-# O Caddy serve o frontend e injeta o header X-API-Key nas chamadas /api/*.
-# Esse é o modelo de segurança do projeto: o browser nunca vê a chave, então
-# não adianta abrir o DevTools para roubá-la.
+# Um serviço só: a mesma aplicação serve a interface e a API, na porta 8037.
+# O frontend é buildado dentro da imagem, então o deploy não depende de nada
+# compilado na máquina de quem publica.
 #
 # Decisões que vêm das regras do Coolify:
 #   - Nenhuma rede declarada: o Coolify cria uma rede isolada por stack.
 #   - Nenhuma porta publicada: publicar contornaria o proxy e exporia o
 #     serviço direto no host. O domínio é atribuído pelo painel.
 #   - TLS não é tratado aqui; o Traefik do Coolify termina HTTPS.
-#   - SERVICE_FQDN_WEB_8037 faz o Coolify apontar o domínio para a 8037.
+#   - SERVICE_FQDN_APP_8037 faz o Coolify apontar o domínio para a 8037.
 #
-# Fora do Coolify, o mesmo arquivo sobe com `docker compose up`; nesse caso
-# publique a porta manualmente (veja docs/OPERACAO.md).
+# Fora do Coolify: `make docker-up` publica a porta localmente.
 
 services:
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile.web
-    restart: unless-stopped
-    environment:
-      # O Coolify substitui esta variável pelo domínio atribuído no painel e
-      # roteia o tráfego para a porta 8037 do container.
-      SERVICE_FQDN_WEB_8037: ${SERVICE_FQDN_WEB_8037:-}
-      # A chave existe só dentro deste container; é injetada nas requisições
-      # que vão para a API e nunca chega ao browser.
-      #
-      # Precisa ser UMA chave só, e uma das que estão em API_KEYS. Usar
-      # API_KEYS aqui injetaria a lista inteira ("chave1,chave2") num header
-      # que espera valor único, e toda requisição do frontend viraria 401.
-      API_KEY_INTERNA: ${API_KEY_FRONTEND:?defina API_KEY_FRONTEND (uma das chaves de API_KEYS)}
-    depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8037/health-web"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-
-  api:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    # Sem `ports` e sem domínio: serviço privado, alcançável apenas pelo web
-    # através da rede interna da stack, em http://api:8037.
-    expose:
-      - "8037"
     environment:
+      # O Coolify substitui pelo domínio atribuído no painel e roteia o
+      # tráfego para a porta 8037 do container.
+      SERVICE_FQDN_APP_8037: ${SERVICE_FQDN_APP_8037:-}
+
       STORAGE_DIR: /data
+      FRONTEND_DIR: /app/frontend
+
+      # Chaves para uso programático da API. Continuam obrigatórias para
+      # quem chama de fora; a interface usa o modo público abaixo.
       API_KEYS: ${API_KEYS:?defina API_KEYS com uma chave de 24+ caracteres}
-      # O frontend é servido pelo mesmo domínio, então CORS fica vazio.
+
+      # Com true, quem abre o site usa a API sem chave. É o mesmo alcance
+      # que um proxy injetando uma chave única para todo visitante teria —
+      # a diferença é estar declarado aqui. Ponha false se o serviço não
+      # deve ficar aberto a quem tiver o endereço.
+      UI_PUBLIC: ${UI_PUBLIC:-true}
+
+      # A interface é servida pela própria aplicação, então não há outra
+      # origem para liberar.
       CORS_ORIGINS: ""
+
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-209715200}
       MAX_STORAGE_BYTES: ${MAX_STORAGE_BYTES:-21474836480}
       MAX_STORAGE_BYTES_PER_KEY: ${MAX_STORAGE_BYTES_PER_KEY:-10737418240}
@@ -89,7 +68,7 @@ services:
       retries: 3
       start_period: 20s
     # FFmpeg é o consumidor de CPU e memória do sistema. Sem teto, um job
-    # grande compete com o Caddy e derruba o atendimento das outras rotas.
+    # grande deixa a máquina inteira sem resposta.
     deploy:
       resources:
         limits:

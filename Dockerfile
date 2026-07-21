@@ -1,7 +1,22 @@
-# Imagem da API. Multi-stage: as ferramentas de build (compilador, pip,
-# cabeçalhos) ficam no primeiro estágio e não viajam para a imagem final.
+# Imagem única: serve a interface e a API na mesma origem, num processo só.
+#
+# Multi-stage: Node e as ferramentas de build do Python ficam nos estágios
+# iniciais e não viajam para a imagem final.
 
-# --- Estágio 1: dependências ---------------------------------------------
+# --- Estágio 1: build do frontend ----------------------------------------
+FROM node:22-alpine AS frontend
+
+WORKDIR /frontend
+
+# Copiar só os manifestos primeiro aproveita o cache de camada: o npm ci só
+# refaz quando as dependências mudam, não a cada alteração de código.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+# --- Estágio 2: dependências Python --------------------------------------
 FROM python:3.13-slim-bookworm AS builder
 
 ENV PIP_NO_CACHE_DIR=1 \
@@ -20,7 +35,7 @@ COPY src ./src
 RUN pip install --upgrade pip \
     && pip install .
 
-# --- Estágio 2: runtime ---------------------------------------------------
+# --- Estágio 3: runtime ---------------------------------------------------
 FROM python:3.13-slim-bookworm AS runtime
 
 # ffmpeg e ffprobe são requisito duro: a API se recusa a subir sem eles.
@@ -37,11 +52,14 @@ RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --create-home --shell /usr/sbin/nologin app
 
 COPY --from=builder /opt/venv /opt/venv
+# A interface sai do estágio de build do Node e é servida pela própria API.
+COPY --from=frontend /frontend/dist /app/frontend
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     STORAGE_DIR=/data \
+    FRONTEND_DIR=/app/frontend \
     LOG_JSON=true
 
 WORKDIR /app

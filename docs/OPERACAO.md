@@ -151,79 +151,53 @@ Alerta mínimo recomendado: qualquer linha com
 ## 5. Deploy com Docker
 
 ```bash
-cp .env.example .env         # preencha API_KEYS e API_KEY_FRONTEND
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-
-make docker-build
-make docker-up
-make docker-logs
+cp .env.example .env         # preencha API_KEYS
+make docker-up               # sobe em http://127.0.0.1:8037
 ```
 
-Topologia:
+Um container só: a mesma aplicação serve a interface e a API na porta 8037.
+O frontend é buildado dentro da imagem (estágio Node no `Dockerfile`), então
+o deploy não depende de `frontend/dist` existir na máquina — o que importa,
+já que `dist/` é ignorado pelo git.
 
 ```
-internet ──443──▶ proxy da plataforma ──8037──▶ web (Caddy) ──8037──▶ api
-                  (Traefik do Coolify,              │        (rede interna,
-                   ou o seu, com TLS)               │      sem porta publicada)
-                                                    ├── serve o frontend
-                                                    └── injeta X-API-Key em /api/*
+internet ──443──▶ proxy da plataforma ──8037──▶ app
+                  (Traefik do Coolify)          ├── interface (estáticos)
+                                                └── API (/api/v1/*)
 ```
 
-O browser **nunca** recebe a chave: ela existe só como variável de ambiente do
-container `web`. `header_up X-API-Key` é um *set*, então qualquer valor que o
-cliente mande nesse header é substituído pelo interno.
+### Acesso
 
-> Cuidado com a ordem no Caddy: as operações de header rodam como
-> Add → Set → Delete, e não na ordem escrita. Um `header_up -X-API-Key` antes
-> do set rodaria **depois** dele e apagaria a chave recém-injetada.
+| Origem | Como autentica |
+|---|---|
+| Interface web | Sem chave, quando `UI_PUBLIC=true`. Dono público compartilhado, com quota e rate limit próprios. |
+| Uso programático | `X-API-Key` obrigatória. Quota e rate limit por chave. |
 
-O frontend é buildado **dentro da imagem** (`Dockerfile.web`). Não depende de
-`frontend/dist` existir na máquina que faz o deploy — o que é essencial, já que
-`dist/` é ignorado pelo git.
+`UI_PUBLIC=true` deixa a API acessível a qualquer visitante do endereço — o
+mesmo alcance que um proxy injetando uma chave única para todos teria, só que
+declarado. Com `false`, toda chamada exige chave e a interface não funciona
+sozinha.
+
+Jobs criados pela interface pública não são visíveis para quem usa chave, e
+vice-versa.
 
 ### Deploy no Coolify
 
-O compose já está no formato que o Coolify espera:
+O compose já está no formato esperado:
 
-- **Sem portas publicadas.** Publicar contornaria o proxy e exporia o serviço
-  direto no host.
-- **Sem rede declarada.** O Coolify cria uma rede isolada por stack.
-- **Sem TLS no Caddy.** Quem termina HTTPS é o Traefik do Coolify.
-- **`SERVICE_FQDN_WEB_8037`** faz o Coolify apontar o domínio atribuído para a
-  porta 8037 do container `web`.
-- O serviço `api` não recebe domínio: fica privado, alcançável só por
-  `http://api:8037` dentro da stack.
+- **Sem portas publicadas** — publicar contornaria o proxy.
+- **Sem rede declarada** — o Coolify cria uma por stack.
+- **Sem TLS na aplicação** — o Traefik do Coolify termina HTTPS.
+- **`SERVICE_FQDN_APP_8037`** aponta o domínio para a porta 8037.
 
-Passos: crie um recurso do tipo *Docker Compose* apontando para o repositório,
-defina `API_KEYS` e `API_KEY_FRONTEND` nas variáveis de ambiente, atribua um
-domínio ao serviço `web` e faça o deploy. O volume `storage` é nomeado e
-sobrevive a redeploys.
+Crie um recurso *Docker Compose* apontando para o repositório, defina
+`API_KEYS`, decida o `UI_PUBLIC`, atribua o domínio e faça o deploy. O volume
+`storage` é nomeado e sobrevive a redeploys.
 
 ### Fora do Coolify
 
-Publique a porta com um override e ponha um proxy com TLS na frente:
-
-```bash
-cat > compose.override.yml <<'YML'
-services:
-  web:
-    ports:
-      - "8037:8037"
-YML
-docker compose up -d
-```
-
-### Alinhamento de limites entre Caddy e API
-
-`max_size` no `Caddyfile` precisa acompanhar `MAX_UPLOAD_BYTES`. Se ficar
-**menor**, o Caddy corta o upload antes de a API poder devolver o `413`
-explicativo. Se ficar muito **maior**, o disco do proxy vira o gargalo.
-Ambos estão em 200 MB por padrão.
-
-Os timeouts do `reverse_proxy` estão em 900 s: upload de 200 MB em link
-ruim leva minutos, e o default de 30 s cortaria o envio no meio.
-
----
+`make docker-up` gera um override que publica a 8037 no host. Ponha um proxy
+com TLS na frente antes de expor à internet.
 
 ## 6. Backup e limpeza do volume
 

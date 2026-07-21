@@ -64,7 +64,7 @@ docker-build:
 # no host. Fora do Coolify a porta precisa ser publicada: o override abaixo
 # faz isso só no uso local, sem sujar o compose que vai para a plataforma.
 docker-up:
-	@printf 'services:\n  web:\n    ports:\n      - "8037:8037"\n' > .compose.local.yml
+	@printf 'services:\n  app:\n    ports:\n      - "8037:8037"\n' > .compose.local.yml
 	@docker compose -f docker-compose.yml -f .compose.local.yml up -d
 	@echo "Subiu em http://127.0.0.1:8037 — acompanhe com 'make docker-logs'."
 

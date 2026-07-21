@@ -136,6 +136,24 @@ class Settings(BaseSettings):
         description="Duração máxima aceita para o vídeo de entrada.",
     )
 
+    # --- Interface -------------------------------------------------------
+    frontend_dir: Path | None = Field(
+        default=None,
+        description=(
+            "Diretório com o build do frontend. Quando existe, a aplicação "
+            "serve a interface na mesma origem da API."
+        ),
+    )
+    ui_public: bool = Field(
+        default=False,
+        description=(
+            "Aceita chamadas da interface sem API key. Quem abrir o site "
+            "consegue usar a API — que é exatamente o que acontecia quando "
+            "um proxy injetava a chave para todo visitante, só que agora "
+            "declarado. Deixe desligado se o serviço não deve ser aberto."
+        ),
+    )
+
     # --- Segurança -------------------------------------------------------
     api_keys: str = Field(
         default="",
@@ -164,6 +182,16 @@ class Settings(BaseSettings):
     @property
     def database_path(self) -> Path:
         return self.storage_dir / "jobs.sqlite3"
+
+    @property
+    def public_owner_hash(self) -> str:
+        """Dono atribuído às requisições da interface sem chave.
+
+        Todas compartilham o mesmo dono, e portanto a mesma quota e o mesmo
+        rate limit — a mesma propriedade que o modelo com proxy injetando
+        uma chave única já tinha.
+        """
+        return hashlib.sha256(b"ads-varietor:public-ui").hexdigest()
 
     @property
     def configured_keys(self) -> list[str]:

@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ads_varietor.api import maintenance
+from ads_varietor.api.frontend import montar_interface
 from ads_varietor.api.errors import (
     ProblemError,
     http_error_handler,
@@ -122,6 +123,12 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router, prefix=API_PREFIX)
     app.include_router(usage.router, prefix=API_PREFIX)
     app.include_router(health.router, prefix=API_PREFIX)
+
+    # A interface é montada por último: o catch-all da SPA precisa vir depois
+    # das rotas da API, senão engoliria todas elas.
+    if settings.frontend_dir is not None:
+        montar_interface(app, settings.frontend_dir, api_prefix=API_PREFIX)
+
     return app
 
 
