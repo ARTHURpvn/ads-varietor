@@ -11,6 +11,16 @@ interface DialogoDeConfirmacaoProps {
   aoCancelar: () => void;
 }
 
+/** Seletor dos elementos que podem receber foco dentro do diálogo. */
+const SELETOR_FOCAVEL = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
 export function DialogoDeConfirmacao({
   titulo,
   descricao,
@@ -22,16 +32,70 @@ export function DialogoDeConfirmacao({
 }: DialogoDeConfirmacaoProps): ReactElement {
   const tituloId = useId();
   const descricaoId = useId();
+  const dialogoRef = useRef<HTMLDivElement>(null);
   const botaoCancelarRef = useRef<HTMLButtonElement>(null);
 
+  // Foca o diálogo ao abrir e devolve o foco a quem o abriu ao fechar.
   useEffect(() => {
+    const elementoAnterior =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
     botaoCancelarRef.current?.focus();
+
+    return () => {
+      elementoAnterior?.focus();
+    };
   }, []);
 
+  // Escape fecha; Tab e Shift+Tab circulam dentro do diálogo.
   useEffect(() => {
     function aoPressionarTecla(evento: KeyboardEvent): void {
       if (evento.key === 'Escape') {
         aoCancelar();
+        return;
+      }
+
+      if (evento.key !== 'Tab') {
+        return;
+      }
+
+      const dialogo = dialogoRef.current;
+
+      if (dialogo === null) {
+        return;
+      }
+
+      const focaveis = Array.from(
+        dialogo.querySelectorAll<HTMLElement>(SELETOR_FOCAVEL),
+      );
+
+      if (focaveis.length === 0) {
+        evento.preventDefault();
+        dialogo.focus();
+        return;
+      }
+
+      const primeiro = focaveis[0];
+      const ultimo = focaveis[focaveis.length - 1];
+
+      if (primeiro === undefined || ultimo === undefined) {
+        return;
+      }
+
+      const ativo = document.activeElement;
+      const focoEstaFora = !dialogo.contains(ativo);
+
+      if (evento.shiftKey && (ativo === primeiro || focoEstaFora)) {
+        evento.preventDefault();
+        ultimo.focus();
+        return;
+      }
+
+      if (!evento.shiftKey && (ativo === ultimo || focoEstaFora)) {
+        evento.preventDefault();
+        primeiro.focus();
       }
     }
 
@@ -45,10 +109,12 @@ export function DialogoDeConfirmacao({
                  p-4 sm:items-center"
     >
       <div
+        ref={dialogoRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={tituloId}
         aria-describedby={descricaoId}
+        tabIndex={-1}
         className="w-full max-w-md rounded-2xl border border-borda
                    bg-superficie p-6 shadow-2xl"
       >

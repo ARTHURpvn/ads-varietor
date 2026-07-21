@@ -112,8 +112,13 @@ def build_filter_complex(
             f"[1:v]scale={overlay_width}:-2,format=yuva420p,"
             f"colorchannelmixer=aa={params.overlay_opacity:.4f}[ov]"
         )
+        # Sem `shortest` aqui: as duas entradas são finitas, e o clipe de
+        # overlay costuma ser mais curto que o vídeo — `shortest` cortaria a
+        # saída na duração do overlay. `eof_action=pass` deixa o vídeo base
+        # seguir sozinho depois que o overlay acaba.
         chains.append(
-            f"[composed][ov]overlay=(W-w)/2:(H-h)/2:shortest=1[overlaid]"
+            "[composed][ov]overlay=(W-w)/2:(H-h)/2:eof_action=pass"
+            ":repeatlast=0[overlaid]"
         )
         last_video_label = "overlaid"
 
@@ -244,6 +249,10 @@ async def render_variation(
     except asyncio.TimeoutError:
         process.kill()
         await process.wait()
+        # O FFmpeg deixa um .mp4 truncado ao ser morto no meio do encode.
+        # Manter esse arquivo faria o download em lote entregar um vídeo
+        # corrompido junto com os bons.
+        output_path.unlink(missing_ok=True)
         return VariationResult(
             variation_id=params.variation_id,
             status=VariationStatus.FAILED,
@@ -254,6 +263,7 @@ async def render_variation(
         # FFmpeg continua consumindo CPU depois do DELETE.
         process.terminate()
         await process.wait()
+        output_path.unlink(missing_ok=True)
         raise
 
     elapsed = loop.time() - started_at
@@ -261,6 +271,7 @@ async def render_variation(
     if process.returncode != 0 or not output_path.exists():
         message = stderr.decode("utf-8", errors="replace").strip()
         last_line = message.splitlines()[-1] if message else "erro desconhecido"
+        output_path.unlink(missing_ok=True)
         return VariationResult(
             variation_id=params.variation_id,
             status=VariationStatus.FAILED,

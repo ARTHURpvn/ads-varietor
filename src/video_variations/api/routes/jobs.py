@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import io
+import asyncio
 import uuid
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from video_variations.api import errors, storage
 from video_variations.api.deps import (
@@ -26,7 +27,6 @@ from video_variations.api.schemas import (
     VariationView,
 )
 from video_variations.core.generator import VariationGenerator
-from video_variations.core.models import VariationParams
 from video_variations.core.probe import InvalidVideoError, probe_video
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -99,8 +99,11 @@ async def create_job(
             ),
         )
 
+    # A reserva considera a entrada mais as N variações que serão gravadas.
+    # Contar só o upload subestimava o consumo real em uma ordem de grandeza.
     used_bytes = await storage.get_used_bytes(settings.storage_dir)
-    if used_bytes + settings.max_upload_bytes > settings.max_storage_bytes:
+    reserva = settings.max_upload_bytes * (1 + num_variations)
+    if used_bytes + reserva > settings.max_storage_bytes:
         raise errors.storage_full()
 
     try:
@@ -113,23 +116,41 @@ async def create_job(
     # Extensão e Content-Type não provam nada: só o ffprobe confirma que o
     # arquivo é mesmo um vídeo decodificável.
     try:
-        await probe_video(input_path)
+        info = await probe_video(input_path)
     except InvalidVideoError:
         await storage.remove_path(input_path)
         raise errors.invalid_video() from None
+
+    # O filtergraph aloca um canvas do tamanho do vídeo: sem teto, um arquivo
+    # pequeno com resolução declarada absurda esgota a memória do processo.
+    if (
+        info.width * info.height > settings.max_input_pixels
+        or info.duration_seconds > settings.max_input_duration_seconds
+    ):
+        await storage.remove_path(input_path)
+        raise errors.video_too_big()
 
     job_id = uuid.uuid4().hex
     output_dir = storage.resolve_within(settings.jobs_dir, job_id)
     variations = VariationGenerator().generate(num_variations)
 
-    await repository.create_job(
-        job_id=job_id,
-        api_key_hash=api_key_hash,
-        num_variations=num_variations,
-        input_path=input_path,
-        output_dir=output_dir,
-        variations=[(item.variation_id, item.model_dump(mode="json")) for item in variations],
-    )
+    try:
+        await repository.create_job(
+            job_id=job_id,
+            api_key_hash=api_key_hash,
+            num_variations=num_variations,
+            input_path=input_path,
+            output_dir=output_dir,
+            variations=[
+                (item.variation_id, item.model_dump(mode="json"))
+                for item in variations
+            ],
+        )
+    except Exception:
+        # Sem isto o upload ficaria órfão no disco para sempre: nenhuma
+        # rotina de limpeza conhece um arquivo que não tem job associado.
+        await storage.remove_path(input_path)
+        raise
 
     _get_runner(request).start(
         job_id=job_id,
@@ -240,22 +261,35 @@ async def download_all(
     job_id: str,
     api_key_hash: RateLimitedKey,
     repository: Repository,
-) -> StreamingResponse:
+    settings: AppSettings,
+) -> FileResponse:
     job = await _load_owned_job(repository, job_id, api_key_hash)
     output_dir = Path(job["output_dir"])
 
-    has_output = any(item["status"] == "completed" for item in job["variations"])
-    if not has_output or not output_dir.is_dir():
+    # Só as variações concluídas entram: varrer o diretório incluiria saídas
+    # parciais de renderizações que falharam, entregando arquivo corrompido.
+    concluidas = [
+        f"{item['variation_id']}.mp4"
+        for item in job["variations"]
+        if item["status"] == "completed"
+    ]
+    if not concluidas or not output_dir.is_dir():
         raise errors.job_not_found()
 
-    buffer = io.BytesIO()
-    storage.stream_zip_of_directory(output_dir, buffer)
-    buffer.seek(0)
+    total_bytes = await asyncio.to_thread(
+        storage.total_size_of, output_dir, concluidas
+    )
+    if total_bytes > settings.max_zip_bytes:
+        raise errors.zip_too_large()
 
-    return StreamingResponse(
-        buffer,
+    archive_path = output_dir / f"{job_id}.zip"
+    await storage.build_zip_file(output_dir, concluidas, archive_path)
+
+    return FileResponse(
+        archive_path,
         media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="variacoes_{job_id}.zip"'
-        },
+        filename=f"variacoes_{job_id}.zip",
+        # O ZIP é derivado: apagar depois do envio evita dobrar o espaço
+        # ocupado por cada job no disco.
+        background=BackgroundTask(archive_path.unlink, missing_ok=True),
     )

@@ -204,16 +204,42 @@ class JobRepository:
     def _set_job_status_sync(
         self, job_id: str, status: JobStatus, error: str | None
     ) -> None:
+        terminais = [item.value for item in _TERMINAL_STATUSES]
+        marcadores = ", ".join("?" for _ in terminais)
         with self._connect() as connection:
+            # A guarda impede que um DELETE que chega no exato momento em que
+            # o job termina sobrescreva COMPLETED com CANCELLED. Estado
+            # terminal não retrocede.
             connection.execute(
-                "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE job_id = ?",
-                (status.value, error, _now(), job_id),
+                f"""
+                UPDATE jobs
+                   SET status = ?, error = ?, updated_at = ?
+                 WHERE job_id = ? AND status NOT IN ({marcadores})
+                """,
+                (status.value, error, _now(), job_id, *terminais),
             )
 
     async def set_job_status(
         self, job_id: str, status: JobStatus, error: str | None = None
     ) -> None:
         await asyncio.to_thread(self._set_job_status_sync, job_id, status, error)
+
+    def _fail_unfinished_variations_sync(self, job_id: str, reason: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE variations
+                   SET status = 'failed', error = ?
+                 WHERE job_id = ? AND status IN ('pending', 'running')
+                """,
+                (reason, job_id),
+            )
+
+    async def fail_unfinished_variations(self, job_id: str, reason: str) -> None:
+        """Encerra as variações que não chegaram a concluir."""
+        await asyncio.to_thread(
+            self._fail_unfinished_variations_sync, job_id, reason
+        )
 
     def _set_variation_result_sync(
         self,
@@ -289,25 +315,6 @@ class JobRepository:
     async def get_job(self, job_id: str) -> dict[str, Any] | None:
         return await asyncio.to_thread(self._get_job_sync, job_id)
 
-    def _list_pending_variations_sync(self, job_id: str) -> list[dict[str, Any]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT variation_id, params_json
-                  FROM variations
-                 WHERE job_id = ? AND status IN ('pending', 'running')
-                 ORDER BY variation_id
-                """,
-                (job_id,),
-            ).fetchall()
-        return [
-            {"variation_id": row["variation_id"], "params": json.loads(row["params_json"])}
-            for row in rows
-        ]
-
-    async def list_pending_variations(self, job_id: str) -> list[dict[str, Any]]:
-        return await asyncio.to_thread(self._list_pending_variations_sync, job_id)
-
     # --- Manutenção ------------------------------------------------------
 
     def _fail_interrupted_jobs_sync(self) -> int:
@@ -337,13 +344,21 @@ class JobRepository:
             datetime.now(timezone.utc) - timedelta(hours=retention_hours)
         ).isoformat()
         with self._connect() as connection:
+            # Só job já terminado é candidato à expiração. Sem esse filtro, um
+            # job ainda renderizando teria os arquivos apagados debaixo do
+            # FFmpeg em execução.
             rows = connection.execute(
                 """
                 SELECT job_id, input_path, output_dir
                   FROM jobs
-                 WHERE status != ? AND updated_at < ?
+                 WHERE status IN (?, ?, ?) AND updated_at < ?
                 """,
-                (JobStatus.EXPIRED.value, cutoff),
+                (
+                    JobStatus.COMPLETED.value,
+                    JobStatus.FAILED.value,
+                    JobStatus.CANCELLED.value,
+                    cutoff,
+                ),
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -367,7 +382,7 @@ class JobRepository:
 
     def _count_and_record_event_sync(
         self, api_key_hash: str, event_type: str, window_seconds: int, limit: int
-    ) -> tuple[bool, int]:
+    ) -> bool:
         """Conta eventos na janela e registra o novo se houver espaço.
 
         A contagem e a inserção acontecem na mesma transação para que duas
@@ -394,9 +409,8 @@ class JobRepository:
                 """,
                 (api_key_hash, event_type, cutoff),
             ).fetchone()
-            used = int(row["total"])
-            if used >= limit:
-                return False, used
+            if int(row["total"]) >= limit:
+                return False
             connection.execute(
                 """
                 INSERT INTO rate_limit_events (api_key_hash, event_type, created_at)
@@ -404,11 +418,12 @@ class JobRepository:
                 """,
                 (api_key_hash, event_type, _now()),
             )
-            return True, used + 1
+            return True
 
     async def count_and_record_event(
         self, *, api_key_hash: str, event_type: str, window_seconds: int, limit: int
-    ) -> tuple[bool, int]:
+    ) -> bool:
+        """Registra o evento se ainda houver espaço na janela. Devolve se passou."""
         return await asyncio.to_thread(
             self._count_and_record_event_sync,
             api_key_hash,

@@ -41,19 +41,6 @@ def find_binary(name: str) -> str:
     )
 
 
-async def get_ffmpeg_version() -> str:
-    """Retorna a primeira linha de `ffmpeg -version`."""
-    process = await asyncio.create_subprocess_exec(
-        find_binary("ffmpeg"),
-        "-version",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    stdout, _ = await process.communicate()
-    first_line = stdout.decode("utf-8", errors="replace").splitlines()
-    return first_line[0] if first_line else "desconhecida"
-
-
 async def probe_video(path: Path) -> VideoInfo:
     """Extrai dimensões, duração e presença de áudio de um vídeo.
 

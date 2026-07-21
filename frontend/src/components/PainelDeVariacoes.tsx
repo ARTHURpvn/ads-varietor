@@ -1,11 +1,12 @@
 import type { ReactElement } from 'react';
-import type { Variation } from '../api/types.ts';
+import type { JobStatus, Variation } from '../api/types.ts';
 import { useDownloadDeVariacao } from '../hooks/useDownloads.ts';
 import { mensagemDeErro } from '../lib/erro.ts';
 import { CartaoDeVariacao } from './CartaoDeVariacao.tsx';
 
 interface PainelDeVariacoesProps {
   jobId: string;
+  statusDoJob: JobStatus;
   variacoes: Variation[];
   /** Texto mostrado quando ainda não há variação alguma. */
   mensagemVazia: string;
@@ -17,18 +18,10 @@ interface PainelDeVariacoesProps {
  */
 export function PainelDeVariacoes({
   jobId,
+  statusDoJob,
   variacoes,
   mensagemVazia,
 }: PainelDeVariacoesProps): ReactElement {
-  const download = useDownloadDeVariacao();
-  const variacaoEmDownload = download.isPending
-    ? (download.variables?.variationId ?? null)
-    : null;
-  const variacaoComErro = download.isError
-    ? (download.variables?.variationId ?? null)
-    : null;
-  const textoDoErro = download.isError ? mensagemDeErro(download.error) : null;
-
   if (variacoes.length === 0) {
     return (
       <p
@@ -43,23 +36,54 @@ export function PainelDeVariacoes({
   return (
     <ul className="grid gap-3 sm:grid-cols-2">
       {variacoes.map((variacao, indice) => (
-        <CartaoDeVariacao
+        <ItemDeVariacao
           key={variacao.variation_id}
+          jobId={jobId}
+          statusDoJob={statusDoJob}
           variacao={variacao}
           indice={indice}
-          baixando={variacaoEmDownload === variacao.variation_id}
-          erroDoDownload={
-            variacaoComErro === variacao.variation_id ? textoDoErro : null
-          }
-          aoBaixar={() =>
-            download.mutate({
-              jobId,
-              variationId: variacao.variation_id,
-              indice,
-            })
-          }
         />
       ))}
     </ul>
+  );
+}
+
+interface ItemDeVariacaoProps {
+  jobId: string;
+  statusDoJob: JobStatus;
+  variacao: Variation;
+  indice: number;
+}
+
+/**
+ * Cada variação tem sua própria mutação de download. Compartilhar uma
+ * só entre todos os cartões faria dois downloads simultâneos disputarem
+ * o mesmo spinner e a mesma mensagem de erro.
+ */
+function ItemDeVariacao({
+  jobId,
+  statusDoJob,
+  variacao,
+  indice,
+}: ItemDeVariacaoProps): ReactElement {
+  const download = useDownloadDeVariacao();
+
+  return (
+    <CartaoDeVariacao
+      variacao={variacao}
+      statusDoJob={statusDoJob}
+      indice={indice}
+      baixando={download.isPending}
+      erroDoDownload={
+        download.isError ? mensagemDeErro(download.error) : null
+      }
+      aoBaixar={() =>
+        download.mutate({
+          jobId,
+          variationId: variacao.variation_id,
+          indice,
+        })
+      }
+    />
   );
 }

@@ -1,4 +1,5 @@
 import { useId, useState, type FormEvent, type ReactElement } from 'react';
+import { useSaudeDoServico } from '../hooks/useSaudeDoServico.ts';
 import { AreaDeUpload } from './AreaDeUpload.tsx';
 import { Alerta } from './Alerta.tsx';
 import { Botao } from './Botao.tsx';
@@ -11,6 +12,8 @@ interface TelaDeEnvioProps {
   enviando: boolean;
   /** Erro vindo da API já traduzido, ou null. */
   erroDoEnvio: string | null;
+  /** Descarta o erro da tentativa anterior de envio. */
+  aoLimparErroDoEnvio: () => void;
   aoEnviar: (arquivo: File, numeroDeVariacoes: number) => void;
   /** Oferta de retomar um trabalho salvo anteriormente. */
   jobSalvo?: { jobId: string; aoRetomar: () => void; aoDescartar: () => void };
@@ -19,6 +22,7 @@ interface TelaDeEnvioProps {
 export function TelaDeEnvio({
   enviando,
   erroDoEnvio,
+  aoLimparErroDoEnvio,
   aoEnviar,
   jobSalvo,
 }: TelaDeEnvioProps): ReactElement {
@@ -26,6 +30,14 @@ export function TelaDeEnvio({
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [quantidade, setQuantidade] = useState<number>(PADRAO_DE_VARIACOES);
   const [erroLocal, setErroLocal] = useState<string | null>(null);
+  const saude = useSaudeDoServico();
+  const servicoDegradado = saude.data?.status === 'degraded';
+
+  /** Toda troca de arquivo zera o erro local E o da última tentativa. */
+  function limparErros(): void {
+    setErroLocal(null);
+    aoLimparErroDoEnvio();
+  }
 
   function aoSubmeter(evento: FormEvent<HTMLFormElement>): void {
     evento.preventDefault();
@@ -65,6 +77,16 @@ export function TelaDeEnvio({
         </p>
       </header>
 
+      {servicoDegradado ? (
+        <Alerta
+          tom="aviso"
+          titulo="O serviço está instável agora"
+          mensagem="O processador de vídeo está indisponível no servidor. Você
+                    pode enviar mesmo assim, mas a geração provavelmente vai
+                    falhar. Se puder, tente de novo em alguns minutos."
+        />
+      ) : null}
+
       {jobSalvo !== undefined ? (
         <Alerta
           tom="informacao"
@@ -80,10 +102,11 @@ export function TelaDeEnvio({
           arquivoSelecionado={arquivo}
           desabilitado={enviando}
           aoSelecionar={(selecionado) => {
-            setErroLocal(null);
+            limparErros();
             setArquivo(selecionado);
           }}
           aoRejeitar={(mensagem) => {
+            limparErros();
             setArquivo(null);
             setErroLocal(mensagem);
           }}

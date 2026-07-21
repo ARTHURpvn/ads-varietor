@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import type { Job } from '../api/types.ts';
 import { useDownloadDoZip } from '../hooks/useDownloads.ts';
 import { mensagemDeErro } from '../lib/erro.ts';
-import { rotuloDoStatusDoJob } from '../lib/mensagens.ts';
+import { motivoDaFalhaDoJob, rotuloDoStatusDoJob } from '../lib/mensagens.ts';
 import { Alerta } from './Alerta.tsx';
 import { Botao } from './Botao.tsx';
 import { PainelDeVariacoes } from './PainelDeVariacoes.tsx';
@@ -38,14 +38,27 @@ export function TelaDeResultados({
         </p>
       </header>
 
-      {job.status === 'failed' && prontas === 0 ? (
+      {job.status === 'failed' ? (
         <Alerta
           tom="erro"
-          titulo="Nenhuma variação foi gerada"
-          mensagem="Não conseguimos processar este vídeo. Tente enviar outro
-                    arquivo ou reduzir o número de variações."
-          rotuloDaAcao="Enviar outro vídeo"
-          aoAcionar={aoComecarDeNovo}
+          titulo={
+            prontas === 0
+              ? 'Nenhuma variação foi gerada'
+              : 'A geração terminou com falha'
+          }
+          mensagem={
+            prontas === 0
+              ? `${motivoDaFalhaDoJob(job)} Tente enviar outro arquivo ou ` +
+                'reduzir o número de variações.'
+              : `${motivoDaFalhaDoJob(job)} As variações que ficaram prontas ` +
+                'continuam disponíveis abaixo.'
+          }
+          {...(prontas === 0
+            ? {
+                rotuloDaAcao: 'Enviar outro vídeo',
+                aoAcionar: aoComecarDeNovo,
+              }
+            : {})}
         />
       ) : null}
 
@@ -91,6 +104,7 @@ export function TelaDeResultados({
 
       <PainelDeVariacoes
         jobId={job.job_id}
+        statusDoJob={job.status}
         variacoes={job.variations}
         mensagemVazia="Nenhuma variação foi criada para este vídeo."
       />

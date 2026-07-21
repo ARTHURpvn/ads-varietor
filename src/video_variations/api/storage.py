@@ -9,9 +9,11 @@ from __future__ import annotations
 import asyncio
 import re
 import shutil
+import time
 import uuid
+import zipfile
 from pathlib import Path
-from typing import BinaryIO, Protocol
+from typing import Protocol
 
 ALLOWED_EXTENSIONS = frozenset({".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"})
 DEFAULT_EXTENSION = ".mp4"
@@ -125,10 +127,60 @@ async def remove_path(path: Path) -> None:
     await asyncio.to_thread(_remove_path, path)
 
 
-def stream_zip_of_directory(directory: Path, target: BinaryIO) -> None:
-    """Escreve um ZIP com os arquivos .mp4 do diretório no destino."""
-    import zipfile
+def _remove_stale_uploads(uploads_dir: Path, max_age_hours: int) -> int:
+    if not uploads_dir.is_dir():
+        return 0
 
+    limite = time.time() - max_age_hours * 3600
+    removidos = 0
+    for item in uploads_dir.iterdir():
+        if item.is_file() and item.stat().st_mtime < limite:
+            item.unlink(missing_ok=True)
+            removidos += 1
+    return removidos
+
+
+async def remove_stale_uploads(uploads_dir: Path, max_age_hours: int) -> int:
+    """Apaga uploads antigos que ficaram sem job associado.
+
+    O arquivo enviado é gravado antes do job existir no banco; se algo falhar
+    entre os dois passos, ninguém mais conhece aquele arquivo.
+    """
+    return await asyncio.to_thread(
+        _remove_stale_uploads, uploads_dir, max_age_hours
+    )
+
+
+def _write_zip(directory: Path, filenames: list[str], target: Path) -> None:
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_STORED) as archive:
-        for item in sorted(directory.glob("*.mp4")):
-            archive.write(item, arcname=item.name)
+        for name in filenames:
+            item = directory / name
+            if item.is_file():
+                archive.write(item, arcname=name)
+
+
+async def build_zip_file(
+    directory: Path, filenames: list[str], destination: Path
+) -> Path:
+    """Escreve num arquivo temporário um ZIP com os arquivos indicados.
+
+    O ZIP vai para disco, e não para a memória: um job de 50 variações pode
+    somar vários GB, e montar isso num buffer derrubaria o processo. A
+    escrita roda em thread para não travar o event loop — com um único
+    worker, um bloqueio aqui congela todas as outras requisições.
+
+    Só os arquivos passados em `filenames` entram; varrer o diretório
+    incluiria saídas parciais de renderizações que falharam.
+    """
+    await asyncio.to_thread(_write_zip, directory, filenames, destination)
+    return destination
+
+
+def total_size_of(directory: Path, filenames: list[str]) -> int:
+    """Soma o tamanho dos arquivos indicados dentro do diretório."""
+    total = 0
+    for name in filenames:
+        item = directory / name
+        if item.is_file():
+            total += item.stat().st_size
+    return total

@@ -47,20 +47,35 @@ export function isApiError(error: unknown): error is ApiError {
 
 /** Mensagem genérica usada quando nada mais se aplica. */
 export const MENSAGEM_INDISPONIVEL =
-  'Não conseguimos falar com o serviço agora. ' +
-  'Verifique sua conexão e tente novamente.';
+  'O serviço não conseguiu responder ao seu pedido agora. ' +
+  'Tente novamente em alguns instantes.';
+
+/**
+ * Falha de rede/conexão: a requisição nem chegou ao servidor.
+ * Merece texto próprio — a ação do usuário aqui é checar a internet.
+ */
+export const MENSAGEM_SEM_CONEXAO =
+  'Não conseguimos falar com o serviço. ' +
+  'Verifique sua conexão e tente de novo.';
+
+/**
+ * Formatos de vídeo aceitos no upload. Fonte única: usada tanto na
+ * validação local do arquivo quanto nas respostas 400/415 da API.
+ */
+export const MENSAGEM_ARQUIVO_INVALIDO =
+  'Envie um arquivo de vídeo (MP4, MOV ou WebM).';
 
 function buildUserMessage(options: ApiErrorOptions): string {
   const { status, context, problem, retryAfterSeconds } = options;
 
   if (status === null) {
-    return MENSAGEM_INDISPONIVEL;
+    return MENSAGEM_SEM_CONEXAO;
   }
 
   switch (status) {
     case 400:
       return context === 'upload'
-        ? 'Envie um arquivo de vídeo (MP4, MOV ou WebM).'
+        ? MENSAGEM_ARQUIVO_INVALIDO
         : 'Não foi possível concluir a operação com esses dados.';
 
     case 401:
@@ -80,7 +95,7 @@ function buildUserMessage(options: ApiErrorOptions): string {
       return 'O vídeo é grande demais. Envie um arquivo menor.';
 
     case 415:
-      return 'Envie um arquivo de vídeo (MP4, MOV ou WebM).';
+      return MENSAGEM_ARQUIVO_INVALIDO;
 
     case 429:
       return retryAfterSeconds !== undefined
@@ -103,7 +118,7 @@ function buildUserMessage(options: ApiErrorOptions): string {
   }
 
   // Último recurso: usa o `detail` só se ele parecer texto de usuário.
-  if (problem !== undefined && isSafeDetail(problem.detail)) {
+  if (problem !== undefined && ehTextoSeguroParaUsuario(problem.detail)) {
     return problem.detail;
   }
 
@@ -111,15 +126,16 @@ function buildUserMessage(options: ApiErrorOptions): string {
 }
 
 /**
- * Rejeita `detail` que contenha path de sistema, stack trace,
- * nome de exceção ou código HTTP cru.
+ * Rejeita texto vindo da API que contenha path de sistema, stack
+ * trace, nome de exceção ou código HTTP cru. Usado no `detail` do
+ * problem+json e no `error` do job antes de mostrá-los na tela.
  */
-function isSafeDetail(detail: unknown): detail is string {
-  if (typeof detail !== 'string') {
+export function ehTextoSeguroParaUsuario(valor: unknown): valor is string {
+  if (typeof valor !== 'string') {
     return false;
   }
 
-  const texto = detail.trim();
+  const texto = valor.trim();
   if (texto.length === 0 || texto.length > 200) {
     return false;
   }

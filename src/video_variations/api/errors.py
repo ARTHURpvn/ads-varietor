@@ -116,6 +116,28 @@ def storage_full() -> ProblemError:
     )
 
 
+def video_too_big() -> ProblemError:
+    return ProblemError(
+        status=400,
+        title="Vídeo fora dos limites",
+        detail=(
+            "Este vídeo é longo ou tem resolução alta demais para o serviço. "
+            "Envie uma versão menor."
+        ),
+    )
+
+
+def zip_too_large() -> ProblemError:
+    return ProblemError(
+        status=413,
+        title="Pacote muito grande",
+        detail=(
+            "O conjunto de variações é grande demais para um único download. "
+            "Baixe os vídeos individualmente."
+        ),
+    )
+
+
 def invalid_identifier() -> ProblemError:
     return ProblemError(
         status=400,

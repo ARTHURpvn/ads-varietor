@@ -9,7 +9,7 @@ import { TelaDeResultados } from './components/TelaDeResultados.tsx';
 import { useCriarJob } from './hooks/useCriarJob.ts';
 import { useJob } from './hooks/useJob.ts';
 import { useJobArmazenado } from './hooks/useJobArmazenado.ts';
-import { mensagemDeErro } from './lib/erro.ts';
+import { mensagemDeErro, tituloDeErro } from './lib/erro.ts';
 
 export function App(): ReactElement {
   const { jobIdSalvo, salvarJobId, limparJobId } = useJobArmazenado();
@@ -42,6 +42,7 @@ export function App(): ReactElement {
         <TelaDeEnvio
           enviando={criacao.isPending}
           erroDoEnvio={criacao.isError ? mensagemDeErro(criacao.error) : null}
+          aoLimparErroDoEnvio={criacao.reset}
           aoEnviar={(arquivo, numeroDeVariacoes) =>
             criacao.mutate({ file: arquivo, numVariations: numeroDeVariacoes })
           }
@@ -65,7 +66,7 @@ export function App(): ReactElement {
         <div className="flex flex-col gap-4">
           <Alerta
             tom="erro"
-            titulo="Serviço indisponível no momento"
+            titulo={tituloDeErro(consulta.error)}
             mensagem={mensagemDeErro(consulta.error)}
             rotuloDaAcao="Tentar de novo"
             aoAcionar={() => void consulta.refetch()}

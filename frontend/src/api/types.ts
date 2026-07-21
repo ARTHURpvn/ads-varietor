@@ -45,12 +45,21 @@ export interface Job {
   status: JobStatus;
   num_variations: number;
   created_at: string;
+  updated_at: string;
+  /** Motivo da falha do trabalho inteiro. null quando não falhou. */
+  error: string | null;
   progress: JobProgress;
   variations: Variation[];
 }
 
 export interface HealthStatus {
-  status: 'ok';
+  /** 'degraded' quando o FFmpeg não está acessível no servidor. */
+  status: 'ok' | 'degraded';
+  /**
+   * Apesar do nome, a API devolve aqui a disponibilidade do FFmpeg
+   * ('disponível' / 'indisponível'), não o número da versão. O nome da
+   * chave é contrato da API e por isso é mantido como está.
+   */
   ffmpeg_version: string;
 }
 

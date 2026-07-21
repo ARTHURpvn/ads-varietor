@@ -68,6 +68,7 @@ export function TelaDeProgresso({
 
       <PainelDeVariacoes
         jobId={job.job_id}
+        statusDoJob={job.status}
         variacoes={job.variations}
         mensagemVazia="As variações aparecem aqui assim que começarem a ser
                        geradas."

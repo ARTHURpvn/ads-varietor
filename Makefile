@@ -17,9 +17,9 @@ setup:
 	@command -v ffmpeg >/dev/null || (echo "FFmpeg não encontrado. Rode: brew install ffmpeg" && exit 1)
 	@test -d $(VENV) || python3 -m venv $(VENV)
 	@$(VENV)/bin/pip install -q -e ".[dev]"
-	@test -f .env || cp .env.example .env
+	@test -f .env || (sed 's|^API_KEYS=.*|API_KEYS='"$$($(VENV)/bin/python -c 'import secrets; print(secrets.token_urlsafe(32))')"'|' .env.example > .env && echo "Criado .env com uma API key gerada.")
 	@cd frontend && npm install
-	@echo "Pronto. Ajuste API_KEYS no .env antes de subir a API."
+	@echo "Pronto. Rode 'make api' e 'make frontend'."
 
 api:
 	@$(PYTHON) -m uvicorn video_variations.api.main:app --host 127.0.0.1 --port 8000

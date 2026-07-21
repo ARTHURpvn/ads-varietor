@@ -1,18 +1,17 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import type { ClientRequest } from 'node:http';
 
 /**
  * O frontend nunca embute credencial. Em desenvolvimento o proxy abaixo
- * repassa /api para a API local, mantendo mesma origem (sem CORS).
- * Em produção um reverse proxy faz o mesmo papel e injeta o header
- * X-API-Key antes de chegar ao backend.
+ * repassa /api para a API local, mantendo a mesma origem (sem CORS) e
+ * injetando a chave — o mesmo papel que o reverse proxy cumpre em produção.
+ *
+ * A chave vem do ambiente do processo Node, sem o prefixo VITE_, então nunca
+ * é embutida no bundle nem chega ao navegador: só o proxy a enxerga.
  */
-/**
- * A chave vem do ambiente do processo Node (sem o prefixo VITE_), então
- * ela nunca é embutida no bundle nem chega ao navegador — só o proxy a vê.
- */
-const developmentApiKey = process.env.DEV_API_KEY ?? '';
+const developmentApiKey = process.env['DEV_API_KEY'] ?? '';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -21,10 +20,10 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyRequest) => {
+        configure: (proxy: { on: (evento: string, ouvinte: (requisicao: ClientRequest) => void) => void }) => {
+          proxy.on('proxyReq', (requisicao: ClientRequest) => {
             if (developmentApiKey) {
-              proxyRequest.setHeader('X-API-Key', developmentApiKey);
+              requisicao.setHeader('X-API-Key', developmentApiKey);
             }
           });
         },

@@ -20,7 +20,7 @@ from video_variations.api.errors import (
 from video_variations.api.repository import JobRepository
 from video_variations.api.routes import health, jobs
 from video_variations.api.runner import JobRunner
-from video_variations.core.probe import FFmpegNotFoundError, find_binary
+from video_variations.core.probe import find_binary
 from video_variations.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,12 @@ async def _cleanup_loop(app: FastAPI, settings: Settings) -> None:
                 await repository.mark_expired(job["job_id"])
             if expired:
                 logger.info("Limpeza removeu %d jobs expirados.", len(expired))
+
+            orfaos = await storage.remove_stale_uploads(
+                settings.uploads_dir, settings.retention_hours
+            )
+            if orfaos:
+                logger.info("Limpeza removeu %d upload(s) órfão(s).", orfaos)
         except asyncio.CancelledError:
             raise
         except Exception:  # pragma: no cover - a limpeza não pode derrubar o app
@@ -58,7 +64,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     if not settings.api_key_hashes:
         raise RuntimeError(
-            "Nenhuma API key configurada. Defina API_KEYS antes de iniciar."
+            "Nenhuma API key configurada. Defina API_KEYS antes de iniciar. "
+            'Gere uma com: python -c "import secrets; '
+            'print(secrets.token_urlsafe(32))"'
+        )
+
+    if settings.weak_keys():
+        raise RuntimeError(
+            "API_KEYS contém chave de exemplo ou curta demais. Substitua por "
+            'uma chave gerada: python -c "import secrets; '
+            'print(secrets.token_urlsafe(32))"'
         )
 
     repository = JobRepository(settings.database_path)

@@ -64,7 +64,7 @@ async def enforce_request_rate_limit(
     settings: AppSettings,
 ) -> str:
     """Limite geral de requisições por minuto, por chave."""
-    allowed, _ = await repository.count_and_record_event(
+    allowed = await repository.count_and_record_event(
         api_key_hash=api_key_hash,
         event_type="request",
         window_seconds=REQUESTS_WINDOW_SECONDS,
@@ -85,7 +85,7 @@ async def enforce_job_rate_limit(
     Criar job é caro (N processos de FFmpeg), então tem um limite próprio,
     bem mais restrito que o de requisições.
     """
-    allowed, _ = await repository.count_and_record_event(
+    allowed = await repository.count_and_record_event(
         api_key_hash=api_key_hash,
         event_type="job",
         window_seconds=JOBS_WINDOW_SECONDS,

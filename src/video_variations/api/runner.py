@@ -30,10 +30,10 @@ class JobRunner:
         self._repository = repository
         self._settings = settings
         self._tasks: dict[str, asyncio.Task[None]] = {}
-
-    def is_running(self, job_id: str) -> bool:
-        task = self._tasks.get(job_id)
-        return task is not None and not task.done()
+        # Um único semáforo para o serviço inteiro: se cada job tivesse o
+        # seu, dez jobs simultâneos abririam dez vezes o limite de processos
+        # de FFmpeg e saturariam a máquina.
+        self._semaphore = asyncio.Semaphore(settings.max_concurrent_ffmpeg)
 
     def start(
         self, *, job_id: str, input_path: Path, output_dir: Path,
@@ -94,12 +94,17 @@ class JobRunner:
                 input_video=input_path,
                 output_dir=output_dir,
                 variations=variations,
-                max_concurrent=self._settings.max_concurrent_ffmpeg,
                 timeout_seconds=self._settings.ffmpeg_timeout_seconds,
                 on_result=on_result,
                 info=info,
+                semaphore=self._semaphore,
             )
         except asyncio.CancelledError:
+            # As variações que não chegaram a rodar ficariam eternamente
+            # "na fila" na tela do usuário se não fossem encerradas aqui.
+            await self._repository.fail_unfinished_variations(
+                job_id, "Cancelado antes de terminar."
+            )
             await self._repository.set_job_status(job_id, JobStatus.CANCELLED)
             raise
         except Exception:

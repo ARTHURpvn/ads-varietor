@@ -1,7 +1,6 @@
 /** Validação de arquivo de vídeo no cliente (antes de subir). */
 
-export const MENSAGEM_ARQUIVO_INVALIDO =
-  'Envie um arquivo de vídeo (MP4, MOV ou WebM).';
+import { MENSAGEM_ARQUIVO_INVALIDO } from '../api/errors.ts';
 
 const TIPOS_ACEITOS: readonly string[] = [
   'video/mp4',

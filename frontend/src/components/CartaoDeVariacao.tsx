@@ -1,38 +1,55 @@
 import type { ReactElement } from 'react';
-import type { Variation, VariationStatus } from '../api/types.ts';
+import type { JobStatus, Variation } from '../api/types.ts';
 import {
   motivoDaFalha,
+  motivoDaInterrupcao,
   resumoDosParametros,
   rotuloDoStatusDaVariacao,
+  statusExibidoDaVariacao,
+  type StatusExibidoDaVariacao,
 } from '../lib/mensagens.ts';
 import { formatarTamanho } from '../lib/videoFile.ts';
 import { Botao } from './Botao.tsx';
 
 interface CartaoDeVariacaoProps {
   variacao: Variation;
+  /** Status do trabalho: define se uma variação na fila ainda avança. */
+  statusDoJob: JobStatus;
   indice: number;
   baixando: boolean;
   erroDoDownload: string | null;
   aoBaixar: () => void;
 }
 
-const ESTILO_DA_ETIQUETA: Record<VariationStatus, string> = {
+const ESTILO_DA_ETIQUETA: Record<StatusExibidoDaVariacao, string> = {
   pending: 'border-borda text-texto-suave',
   running: 'border-destaque text-destaque',
   completed: 'border-sucesso text-sucesso',
   failed: 'border-erro text-erro',
+  interrompida: 'border-alerta text-alerta',
 };
 
 export function CartaoDeVariacao({
   variacao,
+  statusDoJob,
   indice,
   baixando,
   erroDoDownload,
   aoBaixar,
 }: CartaoDeVariacaoProps): ReactElement {
   const numero = String(indice + 1).padStart(2, '0');
-  const concluida = variacao.status === 'completed';
-  const falhou = variacao.status === 'failed';
+  const statusExibido = statusExibidoDaVariacao(variacao, statusDoJob);
+  const concluida = statusExibido === 'completed';
+  const falhou = statusExibido === 'failed';
+  const interrompida = statusExibido === 'interrompida';
+
+  // O backend marca como `failed` as variações que o cancelamento pegou
+  // pelo meio. Sem detalhe do erro, o texto honesto é o de interrupção.
+  const semDetalheDoErro = (variacao.error ?? '').trim().length === 0;
+  const mensagemDaFalha =
+    statusDoJob === 'cancelled' && semDetalheDoErro
+      ? motivoDaInterrupcao(statusDoJob)
+      : motivoDaFalha(variacao);
 
   return (
     <li
@@ -46,9 +63,9 @@ export function CartaoDeVariacao({
 
         <span
           className={`rounded-full border px-2 py-0.5 text-xs font-semibold
-                      ${ESTILO_DA_ETIQUETA[variacao.status]}`}
+                      ${ESTILO_DA_ETIQUETA[statusExibido]}`}
         >
-          {rotuloDoStatusDaVariacao(variacao.status)}
+          {rotuloDoStatusDaVariacao(statusExibido)}
         </span>
 
         {concluida && variacao.size_bytes !== null ? (
@@ -64,7 +81,13 @@ export function CartaoDeVariacao({
 
       {falhou ? (
         <p className="rounded-lg bg-erro/10 px-3 py-2 text-sm text-erro">
-          {motivoDaFalha(variacao)}
+          {mensagemDaFalha}
+        </p>
+      ) : null}
+
+      {interrompida ? (
+        <p className="rounded-lg bg-alerta/10 px-3 py-2 text-sm text-alerta">
+          {motivoDaInterrupcao(statusDoJob)}
         </p>
       ) : null}
 

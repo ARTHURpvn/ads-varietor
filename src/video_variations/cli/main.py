@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import json
 import sys
-from dataclasses import asdict
 from pathlib import Path
 
 from video_variations.core.batch import render_batch, summarize
