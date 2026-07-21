@@ -151,27 +151,67 @@ Alerta mínimo recomendado: qualquer linha com
 ## 5. Deploy com Docker
 
 ```bash
-cp .env.example .env         # preencha API_KEYS, DOMINIO e EMAIL_ACME
+cp .env.example .env         # preencha API_KEYS e API_KEY_FRONTEND
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 make docker-build
-make docker-up               # constrói o frontend se ainda não existir
+make docker-up
 make docker-logs
 ```
 
 Topologia:
 
 ```
-internet ──443──▶ Caddy ──8000──▶ API (rede interna, sem porta publicada)
-                    │
-                    ├── TLS automático (Let's Encrypt)
-                    ├── serve frontend/dist
-                    └── injeta X-API-Key nas rotas /api/*
+internet ──443──▶ proxy da plataforma ──8037──▶ web (Caddy) ──8000──▶ api
+                  (Traefik do Coolify,              │        (rede interna,
+                   ou o seu, com TLS)               │      sem porta publicada)
+                                                    ├── serve o frontend
+                                                    └── injeta X-API-Key em /api/*
 ```
 
-O browser **nunca** recebe a chave: ela existe só como variável de ambiente
-do container do Caddy. Qualquer `X-API-Key` que chegue de fora é descartada
-(`header_up -X-API-Key`) antes de a interna ser posta.
+O browser **nunca** recebe a chave: ela existe só como variável de ambiente do
+container `web`. `header_up X-API-Key` é um *set*, então qualquer valor que o
+cliente mande nesse header é substituído pelo interno.
+
+> Cuidado com a ordem no Caddy: as operações de header rodam como
+> Add → Set → Delete, e não na ordem escrita. Um `header_up -X-API-Key` antes
+> do set rodaria **depois** dele e apagaria a chave recém-injetada.
+
+O frontend é buildado **dentro da imagem** (`Dockerfile.web`). Não depende de
+`frontend/dist` existir na máquina que faz o deploy — o que é essencial, já que
+`dist/` é ignorado pelo git.
+
+### Deploy no Coolify
+
+O compose já está no formato que o Coolify espera:
+
+- **Sem portas publicadas.** Publicar contornaria o proxy e exporia o serviço
+  direto no host.
+- **Sem rede declarada.** O Coolify cria uma rede isolada por stack.
+- **Sem TLS no Caddy.** Quem termina HTTPS é o Traefik do Coolify.
+- **`SERVICE_FQDN_WEB_8037`** faz o Coolify apontar o domínio atribuído para a
+  porta 8037 do container `web`.
+- O serviço `api` não recebe domínio: fica privado, alcançável só por
+  `http://api:8000` dentro da stack.
+
+Passos: crie um recurso do tipo *Docker Compose* apontando para o repositório,
+defina `API_KEYS` e `API_KEY_FRONTEND` nas variáveis de ambiente, atribua um
+domínio ao serviço `web` e faça o deploy. O volume `storage` é nomeado e
+sobrevive a redeploys.
+
+### Fora do Coolify
+
+Publique a porta com um override e ponha um proxy com TLS na frente:
+
+```bash
+cat > compose.override.yml <<'YML'
+services:
+  web:
+    ports:
+      - "8037:8037"
+YML
+docker compose up -d
+```
 
 ### Alinhamento de limites entre Caddy e API
 

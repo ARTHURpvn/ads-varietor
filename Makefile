@@ -16,8 +16,8 @@ help:
 	@echo "  make clean      — remove artefatos de build e saídas locais"
 	@echo ""
 	@echo "Deploy (Docker):"
-	@echo "  make docker-build   — constrói a imagem da API"
-	@echo "  make docker-up      — sobe API + Caddy (TLS + frontend)"
+	@echo "  make docker-build   — constrói as imagens (api e web)"
+	@echo "  make docker-up      — sobe a stack; interface na porta 8037"
 	@echo "  make docker-down    — derruba os containers (volume preservado)"
 	@echo "  make docker-logs    — acompanha os logs JSON da API"
 	@echo ""
@@ -60,10 +60,13 @@ BACKUP_FILE ?= storage-backup-$(shell date +%Y%m%d-%H%M%S).tar.gz
 docker-build:
 	@docker compose build
 
+# O frontend é buildado dentro da imagem web, então não há passo de build
+# no host. Fora do Coolify a porta precisa ser publicada: o override abaixo
+# faz isso só no uso local, sem sujar o compose que vai para a plataforma.
 docker-up:
-	@test -s frontend/dist/index.html || (cd frontend && npm run build)
-	@docker compose up -d
-	@echo "Subiu. Acompanhe com 'make docker-logs'."
+	@printf 'services:\n  web:\n    ports:\n      - "8037:8037"\n' > .compose.local.yml
+	@docker compose -f docker-compose.yml -f .compose.local.yml up -d
+	@echo "Subiu em http://127.0.0.1:8037 — acompanhe com 'make docker-logs'."
 
 docker-down:
 	@docker compose down

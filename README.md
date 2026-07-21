@@ -79,13 +79,19 @@ Documentação interativa em `/docs` com o serviço no ar.
 ## Deploy
 
 ```bash
-cp .env.example .env    # preencha API_KEYS, API_KEY_FRONTEND, DOMINIO, EMAIL_ACME
+cp .env.example .env    # preencha API_KEYS e API_KEY_FRONTEND
 make docker-up
 ```
 
-Sobe a API e um Caddy que termina TLS, serve a interface e **injeta a API key**
-nas requisições do navegador — a chave nunca chega ao cliente. Detalhes de
-operação, backup e limpeza em [docs/OPERACAO.md](docs/OPERACAO.md).
+Sobe dois serviços: `api` (privado, só na rede interna) e `web`, um Caddy que
+serve a interface na porta **8037** e **injeta a API key** nas chamadas
+`/api/*` — a chave nunca chega ao navegador. O frontend é buildado dentro da
+imagem, então o deploy não depende de nada compilado na sua máquina.
+
+TLS fica com o proxy da plataforma. O compose está pronto para **Coolify**:
+sem portas publicadas, sem rede declarada e com `SERVICE_FQDN_WEB_8037` para o
+domínio. Passo a passo, backup e limpeza em
+[docs/OPERACAO.md](docs/OPERACAO.md).
 
 ## Segurança
 

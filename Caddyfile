@@ -1,20 +1,27 @@
-# Caddy na borda: termina TLS, serve o frontend estático e injeta a API key
-# nas chamadas para a API.
+# Caddy interno: serve o frontend estático e injeta a API key nas chamadas
+# para a API.
 #
 # O ponto central: o browser NUNCA recebe a X-API-Key. Ela existe só aqui
-# dentro, como variável de ambiente do container do Caddy, e é acrescentada
-# ao request já do lado do servidor.
+# dentro, como variável de ambiente do container, e é acrescentada ao request
+# já do lado do servidor.
+#
+# TLS NÃO é tratado aqui. Em produção quem termina HTTPS é o proxy da
+# plataforma (Traefik do Coolify, ou o que estiver na frente). Este Caddy
+# escuta HTTP puro numa porta interna e nunca é exposto direto na internet.
 {
-	email {$EMAIL_ACME}
+	admin off
 
-	# Não anuncia a versão do servidor: número de versão é insumo de
-	# reconhecimento para quem procura exploit conhecido.
+	# Sem certificado próprio: o proxy da frente já resolveu HTTPS. Deixar
+	# ligado faria o Caddy tentar obter certificado para um host interno e
+	# falhar em loop.
+	auto_https off
+
 	servers {
-		protocols h1 h2 h3
+		protocols h1 h2c
 	}
 }
 
-{$DOMINIO} {
+:8037 {
 	encode zstd gzip
 
 	log {
@@ -23,14 +30,21 @@
 	}
 
 	header {
-		# HSTS só faz sentido porque o Caddy já obtém certificado sozinho.
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		# A API é same-origin; nada externo precisa ser carregado.
 		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'"
+		# HSTS é responsabilidade do proxy que termina TLS: mandar daqui, numa
+		# resposta que saiu por HTTP, não teria efeito e poderia conflitar.
 		-Server
+	}
+
+	# --- Healthcheck da própria camada web --------------------------------
+	# Responde sem depender da API: serve para a plataforma saber que o
+	# container do frontend está de pé mesmo se a API estiver reiniciando.
+	handle /health-web {
+		respond "ok" 200
 	}
 
 	# --- API --------------------------------------------------------------

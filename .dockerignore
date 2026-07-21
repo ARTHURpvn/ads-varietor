@@ -1,9 +1,13 @@
-# Nada aqui é necessário para construir a imagem da API, e várias destas
-# entradas são segredo (.env) ou lixo pesado (storage, node_modules).
+# Vale para as duas imagens (Dockerfile da API e Dockerfile.web).
+#
+# O Caddyfile NÃO entra aqui: a imagem web precisa copiá-lo. O mesmo vale
+# para frontend/, que é buildado dentro da imagem web — sem ele o deploy
+# subiria sem interface.
 .git
 .gitignore
 .venv
 .env
+.env.example
 .pytest_cache
 __pycache__
 **/__pycache__
@@ -12,9 +16,9 @@ storage/
 output/
 tests/
 docs/
+# Dependências e build do frontend são refeitos dentro da imagem; copiar os
+# do host desperdiça camada e pode arrastar binário de outra arquitetura.
 frontend/node_modules
 frontend/dist
 Makefile
-Dockerfile
 docker-compose.yml
-Caddyfile

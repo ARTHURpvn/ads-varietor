@@ -1,27 +1,65 @@
-# Topologia de produção: Caddy na borda, API só na rede interna.
+# Stack de produção, escrita para rodar no Coolify.
 #
-# O Caddy termina TLS, serve o build estático do frontend e injeta o header
-# X-API-Key nas chamadas /api/*. Esse é o modelo de segurança do projeto: o
-# browser nunca vê a chave, então não adianta abrir o DevTools para roubá-la.
+# Topologia: proxy da plataforma -> web (Caddy, porta 8037) -> api (8000).
 #
-# Antes de subir, preencha o .env da raiz com:
-#   DOMINIO=variacoes.seudominio.com
-#   EMAIL_ACME=voce@seudominio.com
-#   API_KEYS=<chave gerada com secrets.token_urlsafe(32)>
+# O Caddy serve o frontend e injeta o header X-API-Key nas chamadas /api/*.
+# Esse é o modelo de segurança do projeto: o browser nunca vê a chave, então
+# não adianta abrir o DevTools para roubá-la.
+#
+# Decisões que vêm das regras do Coolify:
+#   - Nenhuma rede declarada: o Coolify cria uma rede isolada por stack.
+#   - Nenhuma porta publicada: publicar contornaria o proxy e exporia o
+#     serviço direto no host. O domínio é atribuído pelo painel.
+#   - TLS não é tratado aqui; o Traefik do Coolify termina HTTPS.
+#   - SERVICE_FQDN_WEB_8037 faz o Coolify apontar o domínio para a 8037.
+#
+# Fora do Coolify, o mesmo arquivo sobe com `docker compose up`; nesse caso
+# publique a porta manualmente (veja docs/OPERACAO.md).
 
 services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    environment:
+      # O Coolify substitui esta variável pelo domínio atribuído no painel e
+      # roteia o tráfego para a porta 8037 do container.
+      SERVICE_FQDN_WEB_8037: ${SERVICE_FQDN_WEB_8037:-}
+      # A chave existe só dentro deste container; é injetada nas requisições
+      # que vão para a API e nunca chega ao browser.
+      #
+      # Precisa ser UMA chave só, e uma das que estão em API_KEYS. Usar
+      # API_KEYS aqui injetaria a lista inteira ("chave1,chave2") num header
+      # que espera valor único, e toda requisição do frontend viraria 401.
+      API_KEY_INTERNA: ${API_KEY_FRONTEND:?defina API_KEY_FRONTEND (uma das chaves de API_KEYS)}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8037/health-web"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
   api:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    # Sem `ports`: a API não é publicada no host. O único caminho até ela é
-    # pela rede interna, vindo do Caddy.
+    # Sem `ports` e sem domínio: serviço privado, alcançável apenas pelo web
+    # através da rede interna da stack, em http://api:8000.
     expose:
       - "8000"
     environment:
       STORAGE_DIR: /data
-      API_KEYS: ${API_KEYS:?defina API_KEYS no .env}
+      API_KEYS: ${API_KEYS:?defina API_KEYS com uma chave de 24+ caracteres}
       # O frontend é servido pelo mesmo domínio, então CORS fica vazio.
       CORS_ORIGINS: ""
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-209715200}
@@ -41,9 +79,15 @@ services:
       LOG_JSON: "true"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
+      # Uploads, saídas e o banco. Volume nomeado sobrevive a redeploy e a
+      # troca de imagem — sem ele, todo deploy perderia os jobs.
       - storage:/data
-    networks:
-      - interna
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     # FFmpeg é o consumidor de CPU e memória do sistema. Sem teto, um job
     # grande compete com o Caddy e derruba o atendimento das outras rotas.
     deploy:
@@ -57,45 +101,5 @@ services:
         max-size: "20m"
         max-file: "5"
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    environment:
-      DOMINIO: ${DOMINIO:?defina DOMINIO no .env}
-      EMAIL_ACME: ${EMAIL_ACME:?defina EMAIL_ACME no .env}
-      # A chave existe só dentro do container do Caddy; ela é injetada nas
-      # requisições que vão para a API e nunca chega ao browser.
-      # Precisa ser UMA chave só, e uma das que estão em API_KEYS. Usar
-      # API_KEYS aqui injetaria a lista inteira ("chave1,chave2") num header
-      # que espera um valor único, e toda requisição do frontend viraria 401.
-      API_KEY_INTERNA: ${API_KEY_FRONTEND:?defina API_KEY_FRONTEND no .env (uma das chaves de API_KEYS)}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      # Build estático do frontend: gere com `npm run build` antes do deploy.
-      - ./frontend/dist:/srv/frontend:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - api
-    networks:
-      - interna
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-
-networks:
-  interna:
-    driver: bridge
-
 volumes:
-  # Volume nomeado: sobrevive a `docker compose down` e a troca de imagem.
-  # Backup e limpeza estão documentados no README, seção "Operação".
   storage:
-  caddy_data:
-  caddy_config:
