@@ -198,7 +198,15 @@ async def test_progresso_bate_com_as_variacoes_quando_job_termina(
     job = await _esperar_status(client, job_id, STATUS_TERMINAIS)
 
     assert job["status"] == "completed", job
-    assert job["progress"] == {"total": 3, "completed": 3, "failed": 0}, job
+    assert job["progress"] == {
+        "total": 3,
+        "completed": 3,
+        "failed": 0,
+        # Job terminado fecha em 100%, mesmo que o último bloco de progresso
+        # do FFmpeg não tenha chegado antes do fim do processo.
+        "percent": 100.0,
+    }, job
+    assert all(v["progress"] == 100.0 for v in job["variations"]), job
 
 
 # --- Downloads -----------------------------------------------------------

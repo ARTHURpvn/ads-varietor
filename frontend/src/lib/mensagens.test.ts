@@ -31,6 +31,7 @@ function variacao(
     error: null,
     size_bytes: null,
     md5: null,
+    progress: 0,
     params: {
       speed: 1,
       filter_type: 'brightness',
@@ -53,7 +54,7 @@ function job(sobrescritas: Partial<Job> = {}): Job {
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:10Z',
     error: null,
-    progress: { total: 1, completed: 0, failed: 1 },
+    progress: { total: 1, completed: 0, failed: 1, percent: 100 },
     variations: [],
     ...sobrescritas,
   };

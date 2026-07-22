@@ -28,6 +28,7 @@ ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("jobs", "source_md5", "TEXT"),
     ("jobs", "input_bytes", "INTEGER"),
     ("variations", "md5", "TEXT"),
+    ("variations", "progress", "REAL NOT NULL DEFAULT 0"),
 )
 
 SCHEMA_STATEMENTS = (
@@ -61,6 +62,7 @@ SCHEMA_STATEMENTS = (
         error        TEXT,
         size_bytes   INTEGER,
         md5          TEXT,
+        progress     REAL NOT NULL DEFAULT 0,
         PRIMARY KEY (job_id, variation_id),
         FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
     )
@@ -279,6 +281,31 @@ class JobRepository:
     ) -> None:
         await asyncio.to_thread(self._set_job_status_sync, job_id, status, error)
 
+    def _set_variation_progress_sync(
+        self, job_id: str, variation_id: str, progress: float
+    ) -> None:
+        with self._connect() as connection:
+            # `progress >= ?` impede que um bloco atrasado do FFmpeg faça a
+            # barra andar para trás na tela.
+            connection.execute(
+                """
+                UPDATE variations
+                   SET status = 'running', progress = ?
+                 WHERE job_id = ? AND variation_id = ?
+                   AND status IN ('pending', 'running')
+                   AND progress <= ?
+                """,
+                (progress, job_id, variation_id, progress),
+            )
+
+    async def set_variation_progress(
+        self, *, job_id: str, variation_id: str, progress: float
+    ) -> None:
+        """Grava a fração concluída de uma variação em andamento."""
+        await asyncio.to_thread(
+            self._set_variation_progress_sync, job_id, variation_id, progress
+        )
+
     def _fail_unfinished_variations_sync(self, job_id: str, reason: str) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -349,7 +376,8 @@ class JobRepository:
                 return None
             variation_rows = connection.execute(
                 """
-                SELECT variation_id, status, params_json, error, size_bytes, md5
+                SELECT variation_id, status, params_json, error, size_bytes,
+                       md5, progress
                   FROM variations
                  WHERE job_id = ?
                  ORDER BY variation_id
@@ -366,6 +394,13 @@ class JobRepository:
                 "error": row["error"],
                 "size_bytes": row["size_bytes"],
                 "md5": row["md5"],
+                # Uma variação que terminou vale 100%, mesmo que o último
+                # bloco de progresso não tenha chegado antes do fim.
+                "progress": (
+                    1.0
+                    if row["status"] in {"completed", "failed"}
+                    else float(row["progress"] or 0.0)
+                ),
             }
             for row in variation_rows
         ]

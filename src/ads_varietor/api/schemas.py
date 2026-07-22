@@ -31,6 +31,8 @@ class VariationView(BaseModel):
     error: str | None = None
     size_bytes: int | None = None
     md5: str | None = None
+    # Andamento desta variação, de 0 a 100.
+    progress: float = 0.0
     params: VariationParamsView
 
 
@@ -38,6 +40,10 @@ class JobProgress(BaseModel):
     total: int
     completed: int
     failed: int
+    # Andamento real de 0 a 100, contando o quanto cada variação já rendeu.
+    # Uma variação pela metade conta como meia — por isso a barra sobe
+    # continuamente, em vez de saltar a cada arquivo pronto.
+    percent: float = 0.0
 
 
 class JobCreatedResponse(BaseModel):

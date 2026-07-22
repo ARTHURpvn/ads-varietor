@@ -12,6 +12,7 @@ import asyncio
 import colorsys
 import hashlib
 import logging
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from ads_varietor.core.models import (
@@ -37,9 +38,51 @@ DEFAULT_PRESET = "veryfast"
 
 logger = logging.getLogger(__name__)
 
+# Recebe a fração concluída de uma variação, de 0 a 1.
+ProgressoCallback = Callable[[float], Awaitable[None]]
+
 
 class FilterGraphError(ValueError):
     """Os parâmetros recebidos não produzem um filtergraph válido."""
+
+
+async def _vazio() -> bytes:
+    """Stand-in para quando não há stream de erro a ler."""
+    return b""
+
+
+async def _acompanhar_progresso(
+    stdout: asyncio.StreamReader,
+    *,
+    duracao_total: float,
+    on_progress: ProgressoCallback,
+) -> None:
+    """Lê o fluxo de `-progress` do FFmpeg e reporta a fração concluída.
+
+    O FFmpeg escreve blocos de `chave=valor`, um por linha, terminados por
+    `progress=continue` ou `progress=end`. O que interessa é `out_time_us`:
+    quanto do vídeo de saída já foi escrito.
+    """
+    if duracao_total <= 0:
+        return
+
+    while True:
+        linha = await stdout.readline()
+        if not linha:
+            return
+
+        chave, _, valor = linha.decode("utf-8", errors="replace").strip().partition("=")
+        if chave == "out_time_us":
+            try:
+                segundos = int(valor) / 1_000_000
+            except ValueError:
+                # `out_time_us=N/A` aparece nos primeiros blocos, antes de o
+                # encode produzir qualquer frame.
+                continue
+            await on_progress(min(1.0, max(0.0, segundos / duracao_total)))
+        elif chave == "progress" and valor == "end":
+            await on_progress(1.0)
+            return
 
 
 def _to_even(value: int) -> int:
@@ -333,12 +376,16 @@ async def render_variation(
     mode: ProcessingMode = ProcessingMode.FULL,
     preset: str = DEFAULT_PRESET,
     threads: int = 0,
+    on_progress: ProgressoCallback | None = None,
 ) -> VariationResult:
     """Renderiza uma variação e devolve o resultado.
 
     Nunca levanta exceção por falha do FFmpeg: a falha vira um
     VariationResult com status FAILED, para que uma variação ruim não
     derrube o batch inteiro.
+
+    `on_progress` recebe a fração já concluída desta variação, de 0 a 1,
+    conforme o FFmpeg avança.
     """
     output_path = output_dir / f"{params.variation_id}.mp4"
     ffmpeg_path = find_binary("ffmpeg")
@@ -362,19 +409,48 @@ async def render_variation(
             threads=threads,
         )
 
+    # `-progress pipe:1` faz o FFmpeg publicar o andamento em stdout, em
+    # blocos de chave=valor. Sem isso só dá para saber que uma variação
+    # começou e terminou, e a barra anda aos saltos.
+    acompanhar = on_progress is not None and mode is not ProcessingMode.METADATA_ONLY
+    if acompanhar:
+        command = [command[0], "-progress", "pipe:1", "-nostats", *command[1:]]
+
     loop = asyncio.get_running_loop()
     started_at = loop.time()
     process = await asyncio.create_subprocess_exec(
         *command,
-        stdout=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE if acompanhar else asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
 
-    try:
-        _, stderr = await asyncio.wait_for(
-            process.communicate(), timeout=timeout_seconds
+    # `communicate()` só retorna quando o processo termina, e aqui é preciso
+    # ler stdout enquanto ele roda. Os dois fluxos viram tasks próprias; sem
+    # isso, um stderr grande poderia encher o buffer e travar o FFmpeg.
+    tarefa_stderr = asyncio.create_task(
+        process.stderr.read() if process.stderr else _vazio()
+    )
+    tarefa_progresso: asyncio.Task[None] | None = None
+    if acompanhar and process.stdout is not None and on_progress is not None:
+        tarefa_progresso = asyncio.create_task(
+            _acompanhar_progresso(
+                process.stdout,
+                duracao_total=info.duration_seconds / params.speed,
+                on_progress=on_progress,
+            )
         )
+
+    def _encerrar_leitores() -> None:
+        if tarefa_progresso is not None:
+            tarefa_progresso.cancel()
+
+    try:
+        await asyncio.wait_for(process.wait(), timeout=timeout_seconds)
+        stderr = await tarefa_stderr
+        _encerrar_leitores()
     except asyncio.TimeoutError:
+        _encerrar_leitores()
+        tarefa_stderr.cancel()
         process.kill()
         await process.wait()
         # O FFmpeg deixa um .mp4 truncado ao ser morto no meio do encode.
@@ -399,6 +475,8 @@ async def render_variation(
     except asyncio.CancelledError:
         # Cancelamento do job precisa matar o processo filho, senão o
         # FFmpeg continua consumindo CPU depois do DELETE.
+        _encerrar_leitores()
+        tarefa_stderr.cancel()
         process.terminate()
         await process.wait()
         output_path.unlink(missing_ok=True)

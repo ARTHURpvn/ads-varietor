@@ -17,6 +17,19 @@ from ads_varietor.core.models import (
 from ads_varietor.core.probe import probe_video
 
 ProgressCallback = Callable[[VariationResult], Awaitable[None]]
+# Recebe (variation_id, fração concluída de 0 a 1).
+VariationProgressCallback = Callable[[str, float], Awaitable[None]]
+
+
+def _progresso_da_variacao(
+    variation_id: str, on_progress: VariationProgressCallback
+) -> Callable[[float], Awaitable[None]]:
+    """Amarra o id da variação ao callback que só recebe a fração."""
+
+    async def reportar(fracao: float) -> None:
+        await on_progress(variation_id, fracao)
+
+    return reportar
 
 
 async def render_batch(
@@ -33,6 +46,7 @@ async def render_batch(
     mode: ProcessingMode = ProcessingMode.FULL,
     preset: str = DEFAULT_PRESET,
     threads: int = 0,
+    on_progress: VariationProgressCallback | None = None,
 ) -> list[VariationResult]:
     """Renderiza todas as variações respeitando o limite de concorrência.
 
@@ -63,6 +77,11 @@ async def render_batch(
                 mode=mode,
                 preset=preset,
                 threads=threads,
+                on_progress=(
+                    None
+                    if on_progress is None
+                    else _progresso_da_variacao(params.variation_id, on_progress)
+                ),
             )
         if on_result is not None:
             await on_result(result)

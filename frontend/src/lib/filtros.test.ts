@@ -14,6 +14,7 @@ function variacao(id: string, status: VariationStatus): Variation {
     error: null,
     size_bytes: status === 'completed' ? 1024 : null,
     md5: status === 'completed' ? `${id}0123456789abcdef` : null,
+    progress: status === 'completed' ? 100 : 0,
     params: {
       speed: 1,
       filter_type: 'eq',

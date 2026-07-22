@@ -101,6 +101,13 @@ def _to_detail_response(job: dict[str, Any]) -> JobDetailResponse:
     completed = sum(1 for item in variations if item["status"] == "completed")
     failed = sum(1 for item in variations if item["status"] == "failed")
 
+    # O total é a média do andamento de cada variação, e não a contagem de
+    # arquivos prontos: assim a barra sobe enquanto um vídeo é processado,
+    # em vez de saltar só quando ele termina.
+    total_variacoes = job["num_variations"] or 1
+    andamento = sum(item.get("progress", 0.0) for item in variations)
+    percentual = round(min(100.0, andamento / total_variacoes * 100), 1)
+
     return JobDetailResponse(
         job_id=job["job_id"],
         status=JobStatus(job["status"]),
@@ -111,9 +118,17 @@ def _to_detail_response(job: dict[str, Any]) -> JobDetailResponse:
         updated_at=job["updated_at"],
         error=job["error"],
         progress=JobProgress(
-            total=job["num_variations"], completed=completed, failed=failed
+            total=job["num_variations"],
+            completed=completed,
+            failed=failed,
+            percent=percentual,
         ),
-        variations=[VariationView.model_validate(item) for item in variations],
+        variations=[
+            VariationView.model_validate(
+                {**item, "progress": round(item.get("progress", 0.0) * 100, 1)}
+            )
+            for item in variations
+        ],
     )
 
 

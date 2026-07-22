@@ -34,6 +34,8 @@ export interface Variation {
   size_bytes: number | null;
   /** MD5 do arquivo gerado. null enquanto a variação não terminou. */
   md5: string | null;
+  /** Andamento desta variação, de 0 a 100. */
+  progress: number;
   params: VariationParams;
 }
 
@@ -41,6 +43,12 @@ export interface JobProgress {
   total: number;
   completed: number;
   failed: number;
+  /**
+   * Andamento real de 0 a 100, contando o quanto cada variação já rendeu.
+   * Uma variação pela metade conta como meia, então a barra sobe de forma
+   * contínua em vez de saltar a cada arquivo pronto.
+   */
+  percent: number;
 }
 
 export interface CreatedJob {

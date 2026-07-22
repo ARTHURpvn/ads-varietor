@@ -19,20 +19,20 @@ describe('calcularIntervaloDePolling', () => {
   });
 
   it('test_sobe_para_3s_quando_cruza_exatamente_30s', () => {
-    expect(calcularIntervaloDePolling(30_000)).toBe(3_000);
+    expect(calcularIntervaloDePolling(30_000)).toBe(2_000);
   });
 
   it('test_mantem_3s_quando_esta_no_ultimo_ms_da_janela_tardia', () => {
-    expect(calcularIntervaloDePolling(119_999)).toBe(3_000);
+    expect(calcularIntervaloDePolling(119_999)).toBe(2_000);
   });
 
   it('test_sobe_para_5s_quando_cruza_exatamente_120s', () => {
     /** Regressão: o teto de 5s já foi código morto e nunca era atingido. */
-    expect(calcularIntervaloDePolling(120_000)).toBe(5_000);
+    expect(calcularIntervaloDePolling(120_000)).toBe(3_000);
   });
 
   it('test_permanece_no_teto_de_5s_quando_o_trabalho_passa_de_10min', () => {
-    expect(calcularIntervaloDePolling(600_000)).toBe(5_000);
+    expect(calcularIntervaloDePolling(600_000)).toBe(3_000);
   });
 
   it('test_o_teto_de_5s_e_alcancavel_quando_o_tempo_cresce_indefinidamente', () => {
@@ -40,7 +40,7 @@ describe('calcularIntervaloDePolling', () => {
       [0, 15_000, 45_000, 200_000, 3_600_000].map(calcularIntervaloDePolling),
     );
 
-    expect(intervalosVistos).toEqual(new Set([1_000, 3_000, 5_000]));
+    expect(intervalosVistos).toEqual(new Set([1_000, 2_000, 3_000]));
   });
 
   it('test_a_escalada_nunca_diminui_quando_o_tempo_avanca', () => {
@@ -58,8 +58,8 @@ describe('calcularIntervaloDePolling', () => {
 
   it('test_as_constantes_publicas_batem_com_as_fronteiras_usadas', () => {
     expect(INTERVALO_INICIAL_MS).toBe(1_000);
-    expect(INTERVALO_TARDIO_MS).toBe(3_000);
-    expect(INTERVALO_MAXIMO_MS).toBe(5_000);
+    expect(INTERVALO_TARDIO_MS).toBe(2_000);
+    expect(INTERVALO_MAXIMO_MS).toBe(3_000);
     expect(calcularIntervaloDePolling(JANELA_INICIAL_MS)).toBe(
       INTERVALO_TARDIO_MS,
     );

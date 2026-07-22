@@ -25,6 +25,11 @@ from ads_varietor.settings import Settings
 
 logger = logging.getLogger(__name__)
 
+# Avanço mínimo, em fração, para gravar o progresso de uma variação. Com 5%
+# são cerca de 20 escritas por variação, o suficiente para a barra andar de
+# forma contínua sem transformar cada job num carrossel de UPDATEs.
+PASSO_DO_PROGRESSO = 0.05
+
 
 class JobRunner:
     """Registra e controla as tasks de processamento em andamento."""
@@ -99,6 +104,21 @@ class JobRunner:
                 md5=result.md5,
             )
 
+        # O FFmpeg publica progresso várias vezes por segundo. Gravar tudo
+        # encheria o banco de escritas sem que a tela ganhasse nada: o
+        # frontend consulta a cada 1 a 5 segundos. Só um avanço de PASSO_DO
+        # _PROGRESSO vira UPDATE.
+        ultimo_gravado: dict[str, float] = {}
+
+        async def on_progress(variation_id: str, fracao: float) -> None:
+            anterior = ultimo_gravado.get(variation_id, 0.0)
+            if fracao < 1.0 and fracao - anterior < PASSO_DO_PROGRESSO:
+                return
+            ultimo_gravado[variation_id] = fracao
+            await self._repository.set_variation_progress(
+                job_id=job_id, variation_id=variation_id, progress=fracao
+            )
+
         try:
             try:
                 info = await probe_video(input_path)
@@ -113,6 +133,7 @@ class JobRunner:
                     mode=mode,
                     preset=self._settings.ffmpeg_preset,
                     threads=self._settings.ffmpeg_threads,
+                    on_progress=on_progress,
                 )
             except asyncio.CancelledError:
                 # As variações que não chegaram a rodar ficariam eternamente

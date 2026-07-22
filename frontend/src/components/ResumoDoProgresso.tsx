@@ -25,9 +25,10 @@ export function ResumoDoProgresso({
   const total =
     job.progress.total > 0 ? job.progress.total : job.num_variations;
   const contador = `${job.progress.completed} de ${total} concluídas`;
-  const percentual =
-    total > 0 ? Math.min(100, Math.round((job.progress.completed / total) * 100))
-    : 0;
+  // O percentual vem do servidor e conta o andamento de cada variação por
+  // dentro. Calcular por arquivos prontos faria a barra saltar de 8 em 8%
+  // num job de 12, parada a maior parte do tempo.
+  const percentual = Math.min(100, Math.max(0, Math.round(job.progress.percent)));
   const emAndamento = !isTerminalStatus(job.status);
 
   return (
@@ -65,9 +66,8 @@ export function ResumoDoProgresso({
 
       {mostrarBarra ? (
         <BarraDeProgresso
-          concluidas={job.progress.completed}
-          total={total}
-          rotulo={contador}
+          percentual={percentual}
+          rotulo={`${contador} · ${percentual}%`}
           emAndamento={emAndamento}
         />
       ) : null}
