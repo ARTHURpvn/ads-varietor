@@ -61,12 +61,13 @@ class Settings(BaseSettings):
         description="Tamanho máximo do ZIP gerado no download em lote.",
     )
     retention_hours: int = Field(
-        default=6,
+        default=1,
         gt=0,
         description=(
             "Horas até um job terminado ser apagado. O padrão é curto de "
             "propósito: um job de 50 variações ocupa vários GB e o fluxo "
-            "real é criar e baixar em minutos."
+            "real é criar e baixar em minutos. A hora de folga existe para "
+            "cobrir um download que falhou, sem obrigar a refazer o job."
         ),
     )
     cleanup_interval_seconds: int = Field(

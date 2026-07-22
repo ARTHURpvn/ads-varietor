@@ -41,13 +41,19 @@ upload  ──▶  jobs/<job_id>/*.mp4  ──▶  download  ──▶  apagado
 - **Órfãos**: uploads que nunca viraram job são apagados pela
   reconciliação, respeitando `UNREFERENCED_UPLOAD_GRACE_SECONDS`.
 
-### Retenção: por que 6 horas e não 24
+### Retenção: por que 1 hora
 
-O padrão anterior era 24 h. O fluxo real do produto é criar o job e baixar
-em minutos — não no dia seguinte. Segurar vários GB por um dia inteiro só
-para o caso raro de alguém voltar amanhã custa caro em disco e é a causa
-mais comum de serviço parado por `507`. Suba para 24 apenas se os seus
-usuários de fato rebaixam no dia seguinte.
+O fluxo real do produto é criar o job e baixar em minutos, não no dia
+seguinte. Segurar vários GB esperando alguém voltar amanhã custa caro em
+disco e é a causa mais comum de serviço parado por `507`.
+
+A hora de folga não é arbitrária: ela cobre o download que caiu no meio,
+sem obrigar a refazer o job e gastar CPU de novo. É o mesmo motivo pelo
+qual `DELETE_AFTER_BATCH_DOWNLOAD` fica desligado.
+
+A limpeza roda a cada `CLEANUP_INTERVAL_SECONDS` (900 s por padrão), então
+na prática um job vive entre 1 h e 1 h 15. Suba `RETENTION_HOURS` apenas se
+os seus usuários de fato rebaixam depois.
 
 ### `DELETE_AFTER_BATCH_DOWNLOAD` — o trade-off
 
@@ -108,7 +114,7 @@ Autenticado. Devolve:
   "usage_percent": 15.0,
   "warn_percent": 80,
   "over_threshold": false,
-  "retention_hours": 6,
+  "retention_hours": 1,
   "jobs_by_status": { "completed": 12, "failed": 1 },
   "your_usage": {
     "jobs": 4,
