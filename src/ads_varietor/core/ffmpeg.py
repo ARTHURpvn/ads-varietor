@@ -151,22 +151,26 @@ def build_filter_complex(
             MINIMUM_NOISE_DURATION_SECONDS,
             info.duration_seconds / params.speed + NOISE_DURATION_MARGIN_SECONDS,
         )
+        # A atenuação vai num filtro `volume` próprio, e não no `weights` do
+        # amix: `weights=1 0.15` carrega um espaço, e espaço não escapado no
+        # meio do valor de uma opção de filtergraph é ambíguo para o parser.
         chains.append(
             f"anoisesrc=a={params.noise_level:.4f}:d={noise_duration:.3f}"
-            f":c=pink[a_noise]"
+            f":c=pink[a_noise_bruto]"
+        )
+        chains.append(
+            f"[a_noise_bruto]volume={NOISE_MIX_WEIGHT}[a_noise]"
         )
         audio_sources.append("a_noise")
 
     if len(audio_sources) == 2:
         # `normalize=0` é essencial: com a normalização padrão o amix divide
-        # tudo pelo número de entradas e o áudio original perde 6 dB — metade
-        # do volume — só por existir uma faixa de ruído junto.
-        # O peso mantém o ruído dezenas de dB abaixo do som original, presente
-        # no sinal mas fora do que se escuta.
+        # tudo pelo número de entradas e o áudio original perderia 6 dB —
+        # metade do volume — só por existir uma faixa de ruído junto.
+        # O ruído já vem atenuado pelo `volume` acima, então aqui é só somar.
         chains.append(
-            f"[a_original][a_noise]amix=inputs=2:duration=first:"
-            f"dropout_transition=0:weights=1 {NOISE_MIX_WEIGHT}:"
-            f"normalize=0[aout]"
+            "[a_original][a_noise]amix=inputs=2:duration=first:"
+            "dropout_transition=0:normalize=0[aout]"
         )
         maps.append("[aout]")
     elif len(audio_sources) == 1:
