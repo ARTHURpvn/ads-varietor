@@ -135,13 +135,19 @@ def video_pesado(tmp_path_factory: pytest.TempPathFactory) -> Path:
 # --------------------------------------------------------------------------
 
 
-def test_grafo_amplia_e_corta_quando_a_escala_passa_de_um() -> None:
-    """A saída mantém a resolução do original: cresce e corta o excedente."""
+def test_grafo_corta_o_centro_e_amplia_quando_a_escala_passa_de_um() -> None:
+    """Corta a região central e amplia de volta, preservando a resolução.
+
+    A ordem importa por custo: cortar antes faz o scaler processar menos
+    pixels que o original, em vez de mais.
+    """
     graph, _ = build_filter_complex(
         _params(video_scale=1.05), _info(width=640, height=480)
     )
 
-    assert "crop=640:480" in graph
+    assert "crop=608:456" in graph
+    assert "scale=640:480" in graph
+    assert graph.index("crop=") < graph.index("scale=640:480")
 
 
 def test_grafo_nao_usa_pad_para_nao_deixar_faixa_de_fundo() -> None:
@@ -152,14 +158,18 @@ def test_grafo_nao_usa_pad_para_nao_deixar_faixa_de_fundo() -> None:
     assert "pad=" not in graph
 
 
-def test_camada_de_cor_entra_com_alpha_baixo_quando_ha_tint() -> None:
+def test_veu_de_cor_usa_um_filtro_so_quando_ha_tint() -> None:
+    """Um `colorize` no lugar de fonte de cor + conversão + overlay alpha."""
     graph, _ = build_filter_complex(
         _params(tint_opacity=0.05, background_color="ff8000"),
         _info(width=640, height=480),
     )
 
-    assert "colorchannelmixer=aa=0.0500" in graph
-    assert "color=c=0xff8000" in graph
+    assert "colorize=" in graph
+    assert "mix=0.0500" in graph
+    # Nada de criar um segundo stream de vídeo só para o véu.
+    assert "color=c=" not in graph
+    assert "overlay=0:0" not in graph
 
 
 def test_nenhuma_camada_de_cor_e_criada_quando_tint_e_zero() -> None:
@@ -251,8 +261,8 @@ def test_velocidade_vira_setpts_e_atempo_quando_speed_e_alterado() -> None:
 
 
 def test_dimensoes_do_canvas_sao_pares_quando_original_e_impar() -> None:
+    """Regressão: sem zoom, um lado ímpar chegava assim ao libx264."""
     graph, _ = build_filter_complex(_params(), _info(width=321, height=241))
-    assert "scale=320:240" in graph
     assert "crop=320:240" in graph
 
 
@@ -302,7 +312,10 @@ def _dimensoes_declaradas(graph: str) -> list[tuple[int, int]]:
         sem_rotulos = re.sub(r"\[[^\]]*\]", " ", elo)
         for filtro in sem_rotulos.split(","):
             nome, _, argumentos = filtro.strip().partition("=")
-            if nome == "scale":
+            # `crop` entra junto de `scale`: com zoom, é ele quem define o
+            # recorte; sem zoom, é o único filtro que ajusta a dimensão de
+            # uma entrada com lado ímpar.
+            if nome in {"scale", "crop"}:
                 partes = argumentos.split(":")[:2]
                 if len(partes) == 2 and all(p.lstrip("-").isdigit() for p in partes):
                     largura, altura = int(partes[0]), int(partes[1])

@@ -337,7 +337,11 @@ def test_ruido_entra_com_peso_menor_que_o_audio_original() -> None:
     )
 
     assert NOISE_MIX_WEIGHT < 1.0
-    assert f"weights=1 {NOISE_MIX_WEIGHT}" in graph
+    # A atenuação vai num filtro `volume` próprio: `weights=1 0.15` levava um
+    # espaço, e espaço no meio do valor de uma opção de filtergraph é ambíguo
+    # para o parser — o ruído acabava entrando sem atenuação nenhuma.
+    assert f"volume={NOISE_MIX_WEIGHT}" in graph
+    assert "weights=" not in graph
 
 
 def test_amplitude_sorteada_fica_na_faixa_inaudivel() -> None:

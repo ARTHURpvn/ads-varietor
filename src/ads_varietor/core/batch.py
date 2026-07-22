@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from ads_varietor.core.ffmpeg import render_variation
+from ads_varietor.core.ffmpeg import DEFAULT_PRESET, render_variation
 from ads_varietor.core.models import (
     ProcessingMode,
     VariationParams,
@@ -31,6 +31,8 @@ async def render_batch(
     info: VideoInfo | None = None,
     semaphore: asyncio.Semaphore | None = None,
     mode: ProcessingMode = ProcessingMode.FULL,
+    preset: str = DEFAULT_PRESET,
+    threads: int = 0,
 ) -> list[VariationResult]:
     """Renderiza todas as variações respeitando o limite de concorrência.
 
@@ -59,6 +61,8 @@ async def render_batch(
                 overlay_video=overlay_video,
                 timeout_seconds=timeout_seconds,
                 mode=mode,
+                preset=preset,
+                threads=threads,
             )
         if on_result is not None:
             await on_result(result)

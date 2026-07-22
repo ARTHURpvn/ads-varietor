@@ -122,6 +122,24 @@ class Settings(BaseSettings):
         description="Teto global de processos FFmpeg simultâneos no serviço.",
     )
     ffmpeg_timeout_seconds: int = Field(default=300, gt=0)
+    ffmpeg_preset: str = Field(
+        default="veryfast",
+        description=(
+            "Preset do libx264. `ultrafast` encoda um pouco mais rápido mas "
+            "gera arquivo 2 a 3 vezes maior, o que se paga de volta em disco, "
+            "ZIP e download. `veryfast` costuma ser o melhor equilíbrio."
+        ),
+    )
+    ffmpeg_threads: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Threads por processo de FFmpeg. 0 deixa o FFmpeg decidir, o que "
+            "com vários processos simultâneos gera mais threads que núcleos "
+            "e desperdiça tempo em troca de contexto. Um valor perto de "
+            "(núcleos ÷ MAX_CONCURRENT_FFMPEG) costuma render mais."
+        ),
+    )
     max_input_pixels: int = Field(
         default=8192 * 8192,
         gt=0,

@@ -60,6 +60,10 @@ services:
       MAX_CONCURRENT_FFMPEG: ${MAX_CONCURRENT_FFMPEG:-4}
       MAX_VARIATIONS_PER_JOB: ${MAX_VARIATIONS_PER_JOB:-50}
       FFMPEG_TIMEOUT_SECONDS: ${FFMPEG_TIMEOUT_SECONDS:-300}
+      # Os dois abaixo existem para serem medidos no servidor: mudar e
+      # reiniciar o container basta, não precisa rebuildar a imagem.
+      FFMPEG_PRESET: ${FFMPEG_PRESET:-veryfast}
+      FFMPEG_THREADS: ${FFMPEG_THREADS:-0}
       RATE_LIMIT_JOBS_PER_HOUR: ${RATE_LIMIT_JOBS_PER_HOUR:-20}
       RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-120}
       LOG_JSON: "true"

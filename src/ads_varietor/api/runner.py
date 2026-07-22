@@ -111,6 +111,8 @@ class JobRunner:
                     info=info,
                     semaphore=self._semaphore,
                     mode=mode,
+                    preset=self._settings.ffmpeg_preset,
+                    threads=self._settings.ffmpeg_threads,
                 )
             except asyncio.CancelledError:
                 # As variações que não chegaram a rodar ficariam eternamente

@@ -9,6 +9,7 @@ serve aqui.
 from __future__ import annotations
 
 import asyncio
+import colorsys
 import hashlib
 import logging
 from pathlib import Path
@@ -30,6 +31,9 @@ MINIMUM_NOISE_DURATION_SECONDS = 1.0
 # por volta de -75 dB, contra -21 dB de um áudio comum: altera a faixa de
 # áudio sem que se ouça chiado.
 NOISE_MIX_WEIGHT = 0.15
+# `ultrafast` encoda pouco mais rápido e gera arquivo 2 a 3 vezes maior — o
+# que se paga de volta em escrita de disco, montagem do ZIP e download.
+DEFAULT_PRESET = "veryfast"
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +48,19 @@ def _to_even(value: int) -> int:
     libx264 com pixel format yuv420p exige largura e altura pares.
     """
     return max(2, value - (value % 2))
+
+
+def _cor_para_matiz_e_saturacao(hex_color: str) -> tuple[float, float]:
+    """Converte a cor do véu em matiz (graus) e saturação (0 a 1).
+
+    O filtro `colorize` trabalha em HSV, e a cor do parâmetro vem em hex.
+    """
+    vermelho = int(hex_color[0:2], 16) / 255
+    verde = int(hex_color[2:4], 16) / 255
+    azul = int(hex_color[4:6], 16) / 255
+
+    matiz, _, saturacao = colorsys.rgb_to_hsv(vermelho, verde, azul)
+    return matiz * 360, saturacao
 
 
 def _build_color_filter(params: VariationParams) -> str | None:
@@ -79,42 +96,51 @@ def build_filter_complex(
     """
     canvas_width = _to_even(info.width)
     canvas_height = _to_even(info.height)
-    # A escala é sempre acima de 1: o vídeo cresce e o excedente é cortado
-    # nas bordas. Assim a saída mantém a resolução do original sem faixas de
-    # fundo aparecendo — o enquadramento muda, o formato não.
-    scaled_width = _to_even(int(canvas_width * params.video_scale))
-    scaled_height = _to_even(int(canvas_height * params.video_scale))
+
+    # Zoom feito como CROP e depois SCALE, e não o contrário.
+    #
+    # Ampliar para 105% e cortar de volta dá a mesma imagem que recortar a
+    # região central e ampliar até o tamanho original — mas na primeira
+    # ordem o scaler processa MAIS pixels que o vídeo tem, e na segunda
+    # processa menos. Para zoom de 1,05 em 1080p a diferença é de 2,28
+    # milhões de pixels por frame contra 1,87 milhão.
+    cropped_width = _to_even(int(canvas_width / params.video_scale))
+    cropped_height = _to_even(int(canvas_height / params.video_scale))
 
     # --- Cadeia de vídeo -------------------------------------------------
     video_steps: list[str] = []
     color_filter = _build_color_filter(params)
     if color_filter:
         video_steps.append(color_filter)
-    video_steps.append(f"scale={scaled_width}:{scaled_height}")
-    video_steps.append(
-        f"crop={canvas_width}:{canvas_height}:"
-        f"{(scaled_width - canvas_width) // 2}:"
-        f"{(scaled_height - canvas_height) // 2}"
-    )
+
+    if (cropped_width, cropped_height) != (canvas_width, canvas_height):
+        video_steps.append(
+            f"crop={cropped_width}:{cropped_height}:"
+            f"{(canvas_width - cropped_width) // 2}:"
+            f"{(canvas_height - cropped_height) // 2}"
+        )
+        video_steps.append(f"scale={canvas_width}:{canvas_height}")
+    elif (info.width, info.height) != (canvas_width, canvas_height):
+        # Sem zoom, mas a entrada tem lado ímpar. libx264 com yuv420p exige
+        # dimensão par, então o quadro é aparado no mínimo necessário.
+        video_steps.append(f"crop={canvas_width}:{canvas_height}:0:0")
+
+    # Véu de cor aplicado por um filtro só.
+    #
+    # Antes isto era uma fonte `color` do tamanho do quadro, convertida para
+    # yuva420p e composta com overlay alpha a cada frame: quatro operações e
+    # um segundo stream de vídeo, para um efeito de 2 a 6%. O `colorize`
+    # resolve no mesmo passe, sem criar camada nenhuma.
+    if params.tint_opacity > 0:
+        matiz, saturacao = _cor_para_matiz_e_saturacao(params.background_color)
+        video_steps.append(
+            f"colorize=hue={matiz:.2f}:saturation={saturacao:.4f}"
+            f":mix={params.tint_opacity:.4f}"
+        )
+
     video_steps.append(f"setpts=PTS/{params.speed:.6f}")
 
-    chains = [f"[0:v]{','.join(video_steps)}[base]"]
-
-    # Camada de cor por cima, com alpha baixo. Antes o vídeo é que ficava
-    # transparente sobre um fundo colorido, o que lavava a imagem inteira;
-    # um véu sutil altera os pixels sem estragar o resultado.
-    if params.tint_opacity > 0:
-        chains.append(
-            f"color=c=0x{params.background_color}:"
-            f"s={canvas_width}x{canvas_height}[tint_src]"
-        )
-        chains.append(
-            f"[tint_src]format=yuva420p,"
-            f"colorchannelmixer=aa={params.tint_opacity:.4f}[tint]"
-        )
-        chains.append("[base][tint]overlay=0:0:shortest=1[composed]")
-    else:
-        chains.append("[base]null[composed]")
+    chains = [f"[0:v]{','.join(video_steps)}[composed]"]
 
     last_video_label = "composed"
     if has_overlay_input and params.overlay_enabled:
@@ -247,6 +273,8 @@ def build_command(
     params: VariationParams,
     info: VideoInfo,
     overlay_video: Path | None = None,
+    preset: str = DEFAULT_PRESET,
+    threads: int = 0,
 ) -> list[str]:
     """Monta o comando completo do FFmpeg como lista de argumentos.
 
@@ -278,7 +306,13 @@ def build_command(
     command.extend(_metadata_arguments(params))
 
     command.extend(["-fflags", "+bitexact"])
-    command.extend(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"])
+    # Threads por processo. Com vários FFmpeg simultâneos, deixar cada um
+    # abrir quantas quiser gera mais threads que núcleos e o tempo vai para
+    # troca de contexto em vez de encode.
+    if threads > 0:
+        command.extend(["-threads", str(threads)])
+
+    command.extend(["-c:v", "libx264", "-preset", preset, "-crf", "23"])
     if len(maps) > 1:
         command.extend(["-c:a", "aac", "-b:a", "128k"])
         # Garante que a saída termine com o vídeo, mesmo que a faixa de
@@ -297,6 +331,8 @@ async def render_variation(
     overlay_video: Path | None = None,
     timeout_seconds: int = 300,
     mode: ProcessingMode = ProcessingMode.FULL,
+    preset: str = DEFAULT_PRESET,
+    threads: int = 0,
 ) -> VariationResult:
     """Renderiza uma variação e devolve o resultado.
 
@@ -322,6 +358,8 @@ async def render_variation(
             params=params,
             info=info,
             overlay_video=overlay_video,
+            preset=preset,
+            threads=threads,
         )
 
     loop = asyncio.get_running_loop()
