@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import colorsys
 import random
 
 from ads_varietor.core.metadata import MetadataGenerator
@@ -27,6 +28,22 @@ class VariationGenerator:
         # resultado dependente de quem mais sorteou números no processo.
         self._random = random.Random(seed)
         self._metadata = MetadataGenerator(seed)
+
+    def _cor_de_veu(self) -> str:
+        """Sorteia uma cor de véu suave: qualquer matiz, mas dessaturada.
+
+        Cores 100% saturadas — que um RGB puramente aleatório produz com
+        frequência — deixam o véu forte demais mesmo em alpha baixo (foi o
+        que fez um vídeo sair 'muito laranja'). Sortear em HSV com saturação
+        e brilho contidos mantém o tom presente sem dominar a imagem.
+        """
+        matiz = self._random.random()
+        saturacao = self._random.uniform(0.15, 0.40)
+        brilho = self._random.uniform(0.50, 0.85)
+        vermelho, verde, azul = colorsys.hsv_to_rgb(matiz, saturacao, brilho)
+        return "".join(
+            f"{int(canal * 255):02x}" for canal in (vermelho, verde, azul)
+        )
 
     def generate(
         self,
@@ -60,10 +77,10 @@ class VariationGenerator:
                 if filter_type is not FilterType.NONE
                 else 1.0
             )
-            background_color = "".join(
-                f"{self._random.randint(0, 255):02x}" for _ in range(3)
-            )
-            tint_opacity = round(self._random.uniform(0.02, 0.06), 3)
+            background_color = self._cor_de_veu()
+            # Teto baixo de propósito: com a cor dessaturada, esta faixa
+            # deixa o véu num tom perceptível mas discreto (PSNR ~31-34 dB).
+            tint_opacity = round(self._random.uniform(0.015, 0.035), 4)
         else:
             filter_type = FilterType.NONE
             filter_value = 1.0

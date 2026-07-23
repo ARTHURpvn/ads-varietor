@@ -158,16 +158,21 @@ def test_grafo_nao_usa_pad_para_nao_deixar_faixa_de_fundo() -> None:
     assert "pad=" not in graph
 
 
-def test_veu_de_cor_usa_um_filtro_so_quando_ha_tint() -> None:
-    """Um `colorize` no lugar de fonte de cor + conversão + overlay alpha."""
+def test_veu_de_cor_usa_drawbox_com_alpha_quando_ha_tint() -> None:
+    """O véu é um `drawbox` com `color@alpha`, um blend real e sutil.
+
+    Regressão: o `colorize` que estava aqui aplicava a cor cheia — o `mix`
+    dele mexe no brilho, não na intensidade — e tingia o vídeo inteiro.
+    """
     graph, _ = build_filter_complex(
-        _params(tint_opacity=0.05, background_color="ff8000"),
+        _params(tint_opacity=0.05, background_color="cc9977"),
         _info(width=640, height=480),
     )
 
-    assert "colorize=" in graph
-    assert "mix=0.0500" in graph
-    # Nada de criar um segundo stream de vídeo só para o véu.
+    assert "drawbox=" in graph
+    assert "color=0xcc9977@0.0500" in graph
+    # O colorize quebrado não pode voltar, e nada de segundo stream de vídeo.
+    assert "colorize=" not in graph
     assert "color=c=" not in graph
     assert "overlay=0:0" not in graph
 

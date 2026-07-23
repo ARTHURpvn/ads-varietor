@@ -158,7 +158,7 @@ def test_todos_os_parametros_ficam_dentro_dos_limites_quando_200_variacoes() -> 
         assert VARIATION_ID_PATTERN.match(variacao.variation_id)
         assert len(variacao.background_color) == 6
         assert int(variacao.background_color, 16) >= 0
-        assert 0.0 <= variacao.tint_opacity <= 0.2
+        assert 0.0 <= variacao.tint_opacity <= 0.1
         # A escala nunca desce abaixo de 1: o vídeo é ampliado e cortado,
         # nunca reduzido, para não deixar faixa de fundo aparecendo.
         assert 1.0 <= variacao.video_scale <= 1.5

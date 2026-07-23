@@ -69,7 +69,9 @@ class VariationParams(BaseModel):
     background_color: Annotated[str, Field(pattern=HEX_COLOR_PATTERN.pattern)] = "000000"
     # Intensidade do véu de cor aplicado sobre a imagem. Valores altos
     # deixam o vídeo lavado, por isso o teto é baixo.
-    tint_opacity: float = Field(default=0.0, ge=0.0, le=0.2)
+    # Teto baixo: acima disso o véu de cor domina a imagem em vez de
+    # apenas matizá-la.
+    tint_opacity: float = Field(default=0.0, ge=0.0, le=0.1)
     # Sempre acima de 1: o vídeo é ampliado e cortado nas bordas, nunca
     # reduzido — reduzir deixaria faixas de fundo à mostra.
     video_scale: float = Field(default=1.0, ge=1.0, le=1.5)

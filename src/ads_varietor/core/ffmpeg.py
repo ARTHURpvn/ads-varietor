@@ -9,7 +9,6 @@ serve aqui.
 from __future__ import annotations
 
 import asyncio
-import colorsys
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable
@@ -93,19 +92,6 @@ def _to_even(value: int) -> int:
     return max(2, value - (value % 2))
 
 
-def _cor_para_matiz_e_saturacao(hex_color: str) -> tuple[float, float]:
-    """Converte a cor do véu em matiz (graus) e saturação (0 a 1).
-
-    O filtro `colorize` trabalha em HSV, e a cor do parâmetro vem em hex.
-    """
-    vermelho = int(hex_color[0:2], 16) / 255
-    verde = int(hex_color[2:4], 16) / 255
-    azul = int(hex_color[4:6], 16) / 255
-
-    matiz, _, saturacao = colorsys.rgb_to_hsv(vermelho, verde, azul)
-    return matiz * 360, saturacao
-
-
 def _build_color_filter(params: VariationParams) -> str | None:
     """Traduz o efeito de cor para a sintaxe do filtro `eq`/`hue`.
 
@@ -168,17 +154,18 @@ def build_filter_complex(
         # dimensão par, então o quadro é aparado no mínimo necessário.
         video_steps.append(f"crop={canvas_width}:{canvas_height}:0:0")
 
-    # Véu de cor aplicado por um filtro só.
+    # Véu de cor: um `drawbox` preenchendo o quadro com a cor num alpha
+    # baixo. É um filtro só, e desta vez de verdade sutil.
     #
-    # Antes isto era uma fonte `color` do tamanho do quadro, convertida para
-    # yuva420p e composta com overlay alpha a cada frame: quatro operações e
-    # um segundo stream de vídeo, para um efeito de 2 a 6%. O `colorize`
-    # resolve no mesmo passe, sem criar camada nenhuma.
+    # O `colorize` que estava aqui NÃO servia: o parâmetro `mix` dele
+    # controla o quanto do brilho original é preservado, não a intensidade
+    # da cor — ele sempre aplicava a cor cheia, então `mix=0.06` tingia o
+    # vídeo inteiro de laranja em vez de dar um tom leve. O `drawbox` com
+    # `color@alpha` mistura de verdade só o alpha pedido.
     if params.tint_opacity > 0:
-        matiz, saturacao = _cor_para_matiz_e_saturacao(params.background_color)
         video_steps.append(
-            f"colorize=hue={matiz:.2f}:saturation={saturacao:.4f}"
-            f":mix={params.tint_opacity:.4f}"
+            f"drawbox=w=iw:h=ih:t=fill"
+            f":color=0x{params.background_color}@{params.tint_opacity:.4f}"
         )
 
     video_steps.append(f"setpts=PTS/{params.speed:.6f}")
