@@ -297,3 +297,58 @@ def test_variation_params_e_imutavel_quando_tenta_atribuir_campo(
         setattr(params, campo, valor)
 
     assert VariationParams(variation_id="var_0001") == params
+
+
+# ---------------------------------------------------------------------------
+# Seleção de efeitos
+# ---------------------------------------------------------------------------
+
+
+def test_efeitos_desligados_deixam_parametro_neutro() -> None:
+    from ads_varietor.core.models import EffectSelection, FilterType
+
+    so_cor = EffectSelection(color=True, framing=False, speed=False, noise=False)
+    variacoes = VariationGenerator(seed=5).generate(20, effects=so_cor)
+
+    for v in variacoes:
+        assert v.video_scale == 1.0
+        assert v.speed == 1.0
+        assert v.noise_audio is False
+        assert v.noise_level == 0.0
+
+
+def test_so_a_familia_ligada_varia() -> None:
+    from ads_varietor.core.models import EffectSelection, FilterType
+
+    so_velocidade = EffectSelection(
+        color=False, framing=False, speed=True, noise=False
+    )
+    variacoes = VariationGenerator(seed=7).generate(30, effects=so_velocidade)
+
+    # A velocidade varia...
+    assert any(v.speed != 1.0 for v in variacoes)
+    # ...e o resto fica neutro.
+    for v in variacoes:
+        assert v.filter_type is FilterType.NONE
+        assert v.tint_opacity == 0.0
+        assert v.video_scale == 1.0
+
+
+def test_todos_ligados_e_o_padrao_quando_nao_se_passa_selecao() -> None:
+    padrao = VariationGenerator(seed=9).generate(30)
+    from ads_varietor.core.models import EffectSelection
+
+    explicito = VariationGenerator(seed=9).generate(
+        30, effects=EffectSelection()
+    )
+
+    assert _sem_comment(padrao) == _sem_comment(explicito)
+
+
+def test_nenhum_reconhece_selecao_vazia() -> None:
+    from ads_varietor.core.models import EffectSelection
+
+    assert EffectSelection(
+        color=False, framing=False, speed=False, noise=False
+    ).nenhum()
+    assert not EffectSelection(color=True).nenhum()

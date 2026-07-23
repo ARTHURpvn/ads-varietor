@@ -22,6 +22,27 @@ class FilterType(str, enum.Enum):
     HUE = "hue"
 
 
+class EffectSelection(BaseModel):
+    """Quais famílias de efeito o usuário quer que variem.
+
+    Cada campo ligado libera o sorteio daquela família; desligado, o
+    parâmetro correspondente fica neutro (sem efeito). Metadados não entram
+    aqui porque são sempre aplicados — é o identificador único deles que
+    garante hash distinto mesmo quando nenhum efeito visual está ligado.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    color: bool = True
+    framing: bool = True
+    speed: bool = True
+    noise: bool = True
+
+    def nenhum(self) -> bool:
+        """True quando o usuário desligou todos os efeitos visuais/áudio."""
+        return not (self.color or self.framing or self.speed or self.noise)
+
+
 class VariationParams(BaseModel):
     """Parâmetros que definem uma variação de vídeo.
 

@@ -6,10 +6,18 @@ import type {
   ProcessingMode,
 } from './types.ts';
 
+export interface SelecaoDeEfeitos {
+  color: boolean;
+  framing: boolean;
+  speed: boolean;
+  noise: boolean;
+}
+
 export interface CreateJobInput {
   file: File;
   numVariations: number;
   mode: ProcessingMode;
+  efeitos: SelecaoDeEfeitos;
 }
 
 export async function createJob(input: CreateJobInput): Promise<CreatedJob> {
@@ -17,6 +25,10 @@ export async function createJob(input: CreateJobInput): Promise<CreatedJob> {
   formData.append('file', input.file);
   formData.append('num_variations', String(input.numVariations));
   formData.append('mode', input.mode);
+  formData.append('effect_color', String(input.efeitos.color));
+  formData.append('effect_framing', String(input.efeitos.framing));
+  formData.append('effect_speed', String(input.efeitos.speed));
+  formData.append('effect_noise', String(input.efeitos.noise));
 
   return await requestJson<CreatedJob>('/jobs', {
     method: 'POST',

@@ -1,4 +1,5 @@
 import { useId, useState, type FormEvent, type ReactElement } from 'react';
+import type { SelecaoDeEfeitos } from '../api/jobs.ts';
 import type { ProcessingMode } from '../api/types.ts';
 import { useSaudeDoServico } from '../hooks/useSaudeDoServico.ts';
 import { MODO_PADRAO, rotuloDasSaidas } from '../lib/modos.ts';
@@ -6,7 +7,15 @@ import { AreaDeUpload } from './AreaDeUpload.tsx';
 import { Alerta } from './Alerta.tsx';
 import { Botao } from './Botao.tsx';
 import { Icone } from './Icone.tsx';
+import { SeletorDeEfeitos } from './SeletorDeEfeitos.tsx';
 import { SeletorDeModo } from './SeletorDeModo.tsx';
+
+const EFEITOS_PADRAO: SelecaoDeEfeitos = {
+  color: true,
+  framing: true,
+  speed: true,
+  noise: true,
+};
 
 export const MINIMO_DE_VARIACOES = 1;
 export const MAXIMO_DE_VARIACOES = 50;
@@ -25,6 +34,7 @@ interface TelaDeEnvioProps {
     arquivo: File,
     numeroDeVariacoes: number,
     modo: ProcessingMode,
+    efeitos: SelecaoDeEfeitos,
   ) => void;
   /** Oferta de retomar um trabalho salvo anteriormente. */
   jobSalvo?: { jobId: string; aoRetomar: () => void; aoDescartar: () => void };
@@ -41,6 +51,7 @@ export function TelaDeEnvio({
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [quantidade, setQuantidade] = useState<number>(PADRAO_DE_VARIACOES);
   const [modo, setModo] = useState<ProcessingMode>(MODO_PADRAO);
+  const [efeitos, setEfeitos] = useState<SelecaoDeEfeitos>(EFEITOS_PADRAO);
   const [erroLocal, setErroLocal] = useState<string | null>(null);
   const saude = useSaudeDoServico();
   const servicoDegradado = saude.data?.status === 'degraded';
@@ -73,8 +84,23 @@ export function TelaDeEnvio({
       return;
     }
 
+    const efeitosAtivos = modo === 'full' ? efeitos : EFEITOS_PADRAO;
+    const nenhumEfeito =
+      modo === 'full' &&
+      !efeitosAtivos.color &&
+      !efeitosAtivos.framing &&
+      !efeitosAtivos.speed &&
+      !efeitosAtivos.noise;
+    if (nenhumEfeito) {
+      setErroLocal(
+        'Escolha ao menos um efeito, ou use o modo que só troca a ' +
+          'identidade do arquivo.',
+      );
+      return;
+    }
+
     setErroLocal(null);
-    aoEnviar(arquivo, quantidade, modo);
+    aoEnviar(arquivo, quantidade, modo, efeitosAtivos);
   }
 
   const mensagemDeErro = erroLocal ?? erroDoEnvio;
@@ -149,6 +175,22 @@ export function TelaDeEnvio({
             setModo(escolhido);
           }}
         />
+
+        {/* No modo que só troca a identidade nenhum efeito é aplicado, então
+            o seletor só faz sentido no modo completo. */}
+        {modo === 'full' ? (
+          <>
+            <hr className="border-borda" />
+            <SeletorDeEfeitos
+              valor={efeitos}
+              desabilitado={enviando}
+              aoMudar={(escolhidos) => {
+                limparErros();
+                setEfeitos(escolhidos);
+              }}
+            />
+          </>
+        ) : null}
 
         <hr className="border-borda" />
 

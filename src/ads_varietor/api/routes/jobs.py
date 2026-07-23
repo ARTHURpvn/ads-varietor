@@ -30,7 +30,7 @@ from ads_varietor.api.schemas import (
 )
 from ads_varietor.core.ffmpeg import compute_md5
 from ads_varietor.core.generator import VariationGenerator
-from ads_varietor.core.models import ProcessingMode
+from ads_varietor.core.models import EffectSelection, ProcessingMode
 from ads_varietor.core.probe import InvalidVideoError, probe_video
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,10 @@ async def create_job(
     file: Annotated[UploadFile, File(description="Vídeo de entrada")],
     num_variations: Annotated[int, Form(ge=1)] = 5,
     mode: Annotated[ProcessingMode, Form()] = ProcessingMode.FULL,
+    effect_color: Annotated[bool, Form()] = True,
+    effect_framing: Annotated[bool, Form()] = True,
+    effect_speed: Annotated[bool, Form()] = True,
+    effect_noise: Annotated[bool, Form()] = True,
 ) -> JobCreatedResponse:
     if num_variations > settings.max_variations_per_job:
         raise errors.ProblemError(
@@ -154,6 +158,26 @@ async def create_job(
             detail=(
                 "O número máximo de variações por job é "
                 f"{settings.max_variations_per_job}."
+            ),
+        )
+
+    efeitos = EffectSelection(
+        color=effect_color,
+        framing=effect_framing,
+        speed=effect_speed,
+        noise=effect_noise,
+    )
+    # No modo completo, desligar tudo deixaria a imagem idêntica à origem: o
+    # arquivo mudaria só nos metadados, que é justamente o que o modo rápido
+    # já faz sem gastar um reencode. Barrar aqui evita o usuário pagar caro
+    # por um resultado que ele consegue de graça.
+    if mode is ProcessingMode.FULL and efeitos.nenhum():
+        raise errors.ProblemError(
+            status=400,
+            title="Nenhum efeito selecionado",
+            detail=(
+                "Escolha ao menos um efeito para gerar variações, ou use o "
+                "modo que só troca a identidade do arquivo."
             ),
         )
 
@@ -202,7 +226,7 @@ async def create_job(
 
     job_id = uuid.uuid4().hex
     output_dir = storage.resolve_within(settings.jobs_dir, job_id)
-    variations = VariationGenerator().generate(num_variations)
+    variations = VariationGenerator().generate(num_variations, effects=efeitos)
     # Guardado para o cliente poder comparar o hash de origem com o de cada
     # saída e confirmar que nenhum arquivo repete o original.
     source_md5 = await asyncio.to_thread(compute_md5, input_path)

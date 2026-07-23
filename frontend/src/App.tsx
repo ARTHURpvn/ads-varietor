@@ -71,11 +71,12 @@ export function App(): ReactElement {
               criacao.isError ? mensagemDeErro(criacao.error) : null
             }
             aoLimparErroDoEnvio={criacao.reset}
-            aoEnviar={(arquivo, numeroDeVariacoes, modo) =>
+            aoEnviar={(arquivo, numeroDeVariacoes, modo, efeitos) =>
               criacao.mutate({
                 file: arquivo,
                 numVariations: numeroDeVariacoes,
                 mode: modo,
+                efeitos,
               })
             }
             {...(jobIdSalvo !== null
