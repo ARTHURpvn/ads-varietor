@@ -29,9 +29,9 @@ from ads_varietor.core.probe import find_binary
 NOISE_DURATION_MARGIN_SECONDS = 2.0
 MINIMUM_NOISE_DURATION_SECONDS = 1.0
 # Peso do ruído na mixagem. Junto com a amplitude sorteada, deixa o ruído
-# por volta de -75 dB, contra -21 dB de um áudio comum: altera a faixa de
-# áudio sem que se ouça chiado.
-NOISE_MIX_WEIGHT = 0.15
+# por volta de -50 a -42 dB, contra -21 dB de um áudio comum: um chiado de
+# fundo audível, com o som original bem acima dele.
+NOISE_MIX_WEIGHT = 0.5
 # `ultrafast` encoda pouco mais rápido e gera arquivo 2 a 3 vezes maior — o
 # que se paga de volta em escrita de disco, montagem do ZIP e download.
 DEFAULT_PRESET = "veryfast"

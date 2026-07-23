@@ -96,9 +96,10 @@ class VariationGenerator:
             video_scale=video_scale,
             tint_opacity=tint_opacity,
             noise_audio=noise_enabled,
-            # Amplitude baixa de propósito: o ruído existe para alterar a
-            # faixa de áudio, não para ser ouvido.
-            noise_level=round(self._random.uniform(0.003, 0.012), 4)
+            # Um chiado de fundo audível, mas discreto: nesta faixa, com o
+            # peso da mixagem, o ruído fica por volta de -50 a -42 dB, com o
+            # áudio original 20 a 28 dB acima. Dá para ouvir sem dominar.
+            noise_level=round(self._random.uniform(0.05, 0.12), 4)
             if noise_enabled
             else 0.0,
             # Overlay depende de um vídeo externo que o serviço não recebe,

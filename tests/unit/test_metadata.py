@@ -344,9 +344,9 @@ def test_ruido_entra_com_peso_menor_que_o_audio_original() -> None:
     assert "weights=" not in graph
 
 
-def test_amplitude_sorteada_fica_na_faixa_inaudivel() -> None:
-    """Com peso 0.15, esta faixa mantém o ruído por volta de -73 a -84 dB,
-    contra -21 dB de um áudio comum.
+def test_amplitude_sorteada_fica_na_faixa_de_chiado_de_fundo() -> None:
+    """Com peso 0.5, esta faixa deixa o ruído por volta de -50 a -42 dB,
+    contra -21 dB de um áudio comum: audível como fundo, sem dominar.
     """
     variacoes = VariationGenerator(seed=17).generate(200)
 
@@ -354,7 +354,7 @@ def test_amplitude_sorteada_fica_na_faixa_inaudivel() -> None:
 
     assert com_ruido, "a amostra precisa conter variações com ruído"
     for variacao in com_ruido:
-        assert 0.003 <= variacao.noise_level <= 0.012, variacao.noise_level
+        assert 0.05 <= variacao.noise_level <= 0.12, variacao.noise_level
 
 
 async def test_audio_do_original_mantem_o_volume_quando_ha_ruido(
